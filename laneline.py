@@ -88,6 +88,49 @@ def calculate_curvature(ploty, leftx, rightx):
 
     return left_curverad, right_curverad
 
+def draw_lane_area_to_road(img, warped, left_fitx, right_fitx, yvals):
+    ### Drawing the lines back down onto the road
+    # Create an image to draw the lines on
+    warp_zero = np.zeros_like(warped).astype(np.uint8)
+    color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
+    
+    yvals = ploty
+    # Recast the x and y points into usable format for cv2.fillPoly()
+    pts_left = np.array([np.transpose(np.vstack([left_fitx, yvals]))])
+    pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, yvals])))])
+    pts = np.hstack((pts_left, pts_right))
+    
+    # Draw the lane onto the warped blank image
+    cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
+    
+    # Warp the blank back to original image space using inverse perspective matrix (Minv)
+    newwarp, _, __ = perspective_transform(color_warp, inverse=True)
+#    # Combine the result with the original image
+    combined = cv2.addWeighted(img, 1, newwarp, 0.3, 0)
+    
+    return combined
+
+def lines_from_hist(warped):
+    img_size = warped.shape
+    leftx = np.empty((img_size[0],1))
+    rightx = np.empty((img_size[0],1))
+    ploty = np.linspace(0, 719, num=720)
+
+    printing_size = 2*72
+    windowsize = int(img_size[0]/4)
+    for slide in range(0, img_size[0], printing_size):
+        hist_idx_start = max(img_size[0]-slide-windowsize, 0)
+        hist_idx_end = img_size[0]-slide
+        save_idx_start = img_size[0]-printing_size-slide
+        save_idx_end = img_size[0]-slide
+        if hist_idx_start >=0:
+
+            histogram = np.sum(warped[hist_idx_start:hist_idx_end,:], axis=0)
+            left_peak, right_peak = get_peaks(histogram)
+            leftx[save_idx_start:save_idx_end] = left_peak
+            rightx[save_idx_start:save_idx_end] = right_peak
+
+    return leftx, rightx, ploty
 
 def plot_image(image, title, debug_mode):
     if debug_mode:
@@ -97,24 +140,37 @@ def plot_image(image, title, debug_mode):
 
 def plot_transformed_perspective_binary(orig, transformed, saveasname, src=None, dst=None):
     
-    f, (ax1, ax2) = plt.subplots(1, 2, figsize=(20,6))
-    ax1.imshow(orig['Image'])
-#    ax1.axis('off')
-    ax1.set_title(orig['Title'])
-    if src is not None:
-        ax1.plot([src[0][0], src[1][0]], [src[0][1], src[1][1]] ,'r') # left
-        ax1.plot([src[1][0], src[2][0]], [src[1][1], src[2][1]] ,'r') # bottom
-        ax1.plot([src[2][0], src[3][0]], [src[2][1], src[3][1]] ,'r') # right
-        ax1.plot([src[3][0], src[0][0]], [src[3][1], src[0][1]] ,'r') # top
 
-    ax2.imshow(transformed['Image'], 'gray')
-#    ax2.axis('off')
-    ax2.set_title(transformed['Title'])
+    red_color_int = (255,0,0)
+    red_color_float = (1,0,0)
+    linewidth = 2
+
+    f, (ax1, ax2) = plt.subplots(1, 2, figsize=(12,6))
+
+    if src is not None:
+        cv2.line(orig['Image'], tuple(src[0]), tuple(src[1]), red_color_int, linewidth) # left
+        cv2.line(orig['Image'], tuple(src[1]), tuple(src[2]), red_color_int, linewidth) # bottom
+        cv2.line(orig['Image'], tuple(src[2]), tuple(src[3]), red_color_int, linewidth) # right
+        cv2.line(orig['Image'], tuple(src[3]), tuple(src[0]), red_color_int, linewidth) # top
+
+    ax1.imshow(orig['Image'])
+    ax1.set_title(orig['Title'])
+
     if dst is not None:
-        ax2.plot([dst[0][0], dst[1][0]], [dst[0][1], dst[1][1]] ,'r') # left
-        ax2.plot([dst[1][0], dst[2][0]], [dst[1][1], dst[2][1]] ,'r') # bottom
-        ax2.plot([dst[2][0], dst[3][0]], [dst[2][1], dst[3][1]] ,'r') # right
-        ax2.plot([dst[3][0], dst[0][0]], [dst[3][1], dst[0][1]] ,'r') # top
+        trimage = transformed['Image'].copy()
+        trimage_lined = transformed['Image'].copy()
+    
+        cv2.line(trimage_lined, tuple(dst[0]), tuple(dst[1]), red_color_float, linewidth) # left
+        cv2.line(trimage_lined, tuple(dst[1]), tuple(dst[2]), red_color_float, linewidth) # bottom
+        cv2.line(trimage_lined, tuple(dst[2]), tuple(dst[3]), red_color_float, linewidth) # right
+        cv2.line(trimage_lined, tuple(dst[3]), tuple(dst[0]), red_color_float, linewidth) # top
+        final = np.dstack((trimage_lined, trimage, trimage))
+
+        ax2.imshow(final)
+    else:
+        ax2.imshow(transformed['Image'], 'gray')
+
+    ax2.set_title(transformed['Title'])
     plt.tight_layout()
 
     plt.savefig(saveasname)
@@ -144,14 +200,14 @@ if __name__ == "__main__":
 
     warped, src, dst = perspective_transform(binary)
     mask = np.zeros(warped.shape, dtype=bool)
-#    mask.astype(bool)
+    mask.astype(bool)
     mask[:, 150:-150] = True
     warped[~mask] = 0
 
-    original_dict = {'Image': img,
+    original_dict = {'Image': img.copy(),
                      'Title': 'Original Image\n' + fname.split('/')[-1]}
 
-    transformed_dict = {'Image': warped,
+    transformed_dict = {'Image': warped.copy(),
                         'Title': 'Perspective Transformed Image'}
  
     figpath = 'output_images/' + fname.split('/')[-1].split('.')[0] + '_transformed_perspective.jpg'
@@ -161,26 +217,7 @@ if __name__ == "__main__":
     
     
     ### Detect lane lines
-    img_size = warped.shape
-    leftx = np.empty((img_size[0],1))
-    rightx = np.empty((img_size[0],1))
-    ploty = np.linspace(0, 719, num=720)
-
-    printing_size = 2*72
-    windowsize = int(img_size[0]/4)
-    for slide in range(0, img_size[0], printing_size):
-        hist_idx_start = max(img_size[0]-slide-windowsize, 0)
-        hist_idx_end = img_size[0]-slide
-        save_idx_start = img_size[0]-printing_size-slide
-        save_idx_end = img_size[0]-slide
-        if hist_idx_start >=0:
-
-            histogram = np.sum(warped[hist_idx_start:hist_idx_end,:], axis=0)
-            left_peak, right_peak = get_peaks(histogram)
-            leftx[save_idx_start:save_idx_end] = left_peak
-            rightx[save_idx_start:save_idx_end] = right_peak
-#            print('slide:', slide, 'hist_idx_start:', hist_idx_start, 'hist_idx_end:', hist_idx_end, 'writing to:', save_idx_start, '...', save_idx_end)
-
+    leftx, rightx, ploty = lines_from_hist(warped)
 
     plt.figure()
     plt.imshow(warped, 'gray')
@@ -214,30 +251,10 @@ if __name__ == "__main__":
     ### Determine the lane curvature
     left_curverad, right_curverad = calculate_curvature(ploty, leftx, rightx)
 
+    print('Radius of curvature:', left_curverad, 'm', right_curverad, 'm')
     
-    # Now our radius of curvature is in meters
-    print(left_curverad, 'm', right_curverad, 'm')
-    
-    
-    ### Drawing the lines back down onto the road
-    # Create an image to draw the lines on
-    warp_zero = np.zeros_like(warped).astype(np.uint8)
-    color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
-    
-    yvals = ploty
-    # Recast the x and y points into usable format for cv2.fillPoly()
-    pts_left = np.array([np.transpose(np.vstack([left_fitx, yvals]))])
-    pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, yvals])))])
-    pts = np.hstack((pts_left, pts_right))
-    
-    # Draw the lane onto the warped blank image
-    cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
-    
-    # Warp the blank back to original image space using inverse perspective matrix (Minv)
-    newwarp, _, __ = perspective_transform(color_warp, inverse=True)
-#    # Combine the result with the original image
-    result = cv2.addWeighted(img, 1, newwarp, 0.3, 0)
-    
+    result = draw_lane_area_to_road(img, warped, left_fitx, right_fitx, ploty)
+
     plt.figure()
     plt.imshow(result)
 
