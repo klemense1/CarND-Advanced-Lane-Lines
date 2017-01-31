@@ -16,6 +16,9 @@ import thresholds
 
 plt.close("all")
 
+DEBUG_MODE = False
+
+
 def get_peaks(hist):
     
     maxlength = len(hist)
@@ -93,8 +96,7 @@ def draw_lane_area_to_road(img, warped, left_fitx, right_fitx, yvals):
     # Create an image to draw the lines on
     warp_zero = np.zeros_like(warped).astype(np.uint8)
     color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
-    
-    yvals = ploty
+
     # Recast the x and y points into usable format for cv2.fillPoly()
     pts_left = np.array([np.transpose(np.vstack([left_fitx, yvals]))])
     pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, yvals])))])
@@ -132,129 +134,160 @@ def lines_from_hist(warped):
 
     return leftx, rightx, ploty
 
-def plot_image(image, title, debug_mode):
+def fit_polynomial_line(xval, yval):
+    """
+    Fit a second order polynomial to pixel positions in lane line
+    """
+    line_fit = np.polyfit(yval, xval, 2)
+    line_fitx = line_fit[0]*yval**2 + line_fit[1]*yval + line_fit[2]
+
+    return line_fitx
+
+
+def plot_image(image, title, debug_mode=False):
+    
     if debug_mode:
-        fig = plt.figure()
+        plt.figure()
         plt.imshow(image, cmap='gray')
         plt.title(title)
 
-def plot_transformed_perspective_binary(orig, transformed, saveasname, src=None, dst=None):
+def plot_detected_lines(image, leftx, rightx, ploty, debug_mode=False):
     
+    if debug_mode:
+        plt.figure()
+        plt.imshow(image, 'gray')
+        plt.plot(leftx, ploty, '.', color='red', linewidth=2)
+        plt.plot(rightx, ploty, '.', color='blue', linewidth=2)
+        plt.xlim(0, 1280)
+        plt.ylim(0, 720)
+        plt.gca().invert_yaxis()
+        
+        figpath = 'output_images/detected_lanes.jpg'
+        plt.savefig(figpath)
 
-    red_color_int = (255,0,0)
-    red_color_float = (1,0,0)
-    linewidth = 2
-
-    f, (ax1, ax2) = plt.subplots(1, 2, figsize=(12,6))
-
-    if src is not None:
-        cv2.line(orig['Image'], tuple(src[0]), tuple(src[1]), red_color_int, linewidth) # left
-        cv2.line(orig['Image'], tuple(src[1]), tuple(src[2]), red_color_int, linewidth) # bottom
-        cv2.line(orig['Image'], tuple(src[2]), tuple(src[3]), red_color_int, linewidth) # right
-        cv2.line(orig['Image'], tuple(src[3]), tuple(src[0]), red_color_int, linewidth) # top
-
-    ax1.imshow(orig['Image'])
-    ax1.set_title(orig['Title'])
-
-    if dst is not None:
-        trimage = transformed['Image'].copy()
-        trimage_lined = transformed['Image'].copy()
+def plot_fitted_curve(leftx, rightx, ploty, debug_mode=False):
     
-        cv2.line(trimage_lined, tuple(dst[0]), tuple(dst[1]), red_color_float, linewidth) # left
-        cv2.line(trimage_lined, tuple(dst[1]), tuple(dst[2]), red_color_float, linewidth) # bottom
-        cv2.line(trimage_lined, tuple(dst[2]), tuple(dst[3]), red_color_float, linewidth) # right
-        cv2.line(trimage_lined, tuple(dst[3]), tuple(dst[0]), red_color_float, linewidth) # top
-        final = np.dstack((trimage_lined, trimage, trimage))
+    if debug_mode:
+        
+        left_fitx = fit_polynomial_line(leftx, ploty)
+        right_fitx = fit_polynomial_line(rightx, ploty)
+        
+        plt.figure()
+        plt.plot(leftx, ploty, '.', color='red', linewidth=2)
+        plt.plot(rightx, ploty, '.', color='blue', linewidth=2)
+        plt.xlim(0, 1280)
+        plt.ylim(0, 720)
+        plt.plot(left_fitx, ploty, color='green', linewidth=2)
+        plt.plot(right_fitx, ploty, color='green', linewidth=2)
+        plt.gca().invert_yaxis() # to visualize as we do the images
 
-        ax2.imshow(final)
-    else:
-        ax2.imshow(transformed['Image'], 'gray')
+        figpath = 'output_images/plotted_lines.jpg'
+        plt.savefig(figpath)
 
-    ax2.set_title(transformed['Title'])
-    plt.tight_layout()
+def plot_transformed_perspective_binary(orig, transformed, saveasname, src=None, dst=None, debug_mode=False):
+    
+    if debug_mode:
+        red_color_int = (255,0,0)
+        red_color_float = (1,0,0)
+        linewidth = 2
+    
+        f, (ax1, ax2) = plt.subplots(1, 2, figsize=(12,6))
+    
+        if src is not None:
+            cv2.line(orig['Image'], tuple(src[0]), tuple(src[1]), red_color_int, linewidth) # left
+            cv2.line(orig['Image'], tuple(src[1]), tuple(src[2]), red_color_int, linewidth) # bottom
+            cv2.line(orig['Image'], tuple(src[2]), tuple(src[3]), red_color_int, linewidth) # right
+            cv2.line(orig['Image'], tuple(src[3]), tuple(src[0]), red_color_int, linewidth) # top
+    
+        ax1.imshow(orig['Image'])
+        ax1.set_title(orig['Title'])
+    
+        if dst is not None:
+            trimage = transformed['Image'].copy()
+            trimage_lined = transformed['Image'].copy()
+        
+            cv2.line(trimage_lined, tuple(dst[0]), tuple(dst[1]), red_color_float, linewidth) # left
+            cv2.line(trimage_lined, tuple(dst[1]), tuple(dst[2]), red_color_float, linewidth) # bottom
+            cv2.line(trimage_lined, tuple(dst[2]), tuple(dst[3]), red_color_float, linewidth) # right
+            cv2.line(trimage_lined, tuple(dst[3]), tuple(dst[0]), red_color_float, linewidth) # top
+            final = np.dstack((trimage_lined, trimage, trimage))
+    
+            ax2.imshow(final)
+        else:
+            ax2.imshow(transformed['Image'], 'gray')
+    
+        ax2.set_title(transformed['Title'])
+        plt.tight_layout()
+        
+        figpath = 'output_images/transformed_perspective.jpg'
 
-    plt.savefig(saveasname)
+        plt.savefig(figpath)
 
-if __name__ == "__main__":
-
-
-    fname = 'test_images/test5.jpg'
-    img = mpimg.imread(fname)
-
-    ### Camera calibration
+def detect(img):
+    
+    ### 1. Camera calibration
 
     dist_pickle = pickle.load(open("wide_dist_pickle.p", "rb"))
     mtx = dist_pickle["mtx"]
     dist = dist_pickle["dist"]
+
+    ### 2. Distortion correction
+
+    img_undist = undistort(img, mtx, dist)
+
+    ### 3. Color/gradient threshold
+
+    img_binary = thresholds.combined_binary(img_undist)
+    plot_image(img_binary, 'binary ... combined thresholds', DEBUG_MODE)
+
+    ### 4. Perspective transform
+
+    img_warped, src, dst = perspective_transform(img_binary)
     
-    ### Distortion correction
-
-    undist = undistort(img, mtx, dist)
-
-    ### Color/gradient threshold
-
-    binary = thresholds.combined_binary(undist)
-    plot_image(binary, 'binary ... combined thresholds', True)
-
-    ### Perspective transform
-
-    warped, src, dst = perspective_transform(binary)
-    mask = np.zeros(warped.shape, dtype=bool)
-    mask.astype(bool)
+    mask = np.zeros(img_warped.shape, dtype=bool)
     mask[:, 150:-150] = True
-    warped[~mask] = 0
+
+    img_warped[~mask] = 0
 
     original_dict = {'Image': img.copy(),
-                     'Title': 'Original Image\n' + fname.split('/')[-1]}
+                     'Title': 'Original Image'}
 
-    transformed_dict = {'Image': warped.copy(),
+    transformed_dict = {'Image': img_warped.copy(),
                         'Title': 'Perspective Transformed Image'}
- 
-    figpath = 'output_images/' + fname.split('/')[-1].split('.')[0] + '_transformed_perspective.jpg'
+     
+    plot_transformed_perspective_binary(original_dict, transformed_dict, src, dst, DEBUG_MODE)
     
-    plot_transformed_perspective_binary(original_dict, transformed_dict, figpath, src, dst)
-
+    ### 5. Detect lane lines
     
+    leftx, rightx, ploty = lines_from_hist(img_warped)
+
+    plot_detected_lines(img_warped, leftx, rightx, ploty, DEBUG_MODE)
     
-    ### Detect lane lines
-    leftx, rightx, ploty = lines_from_hist(warped)
+    left_fitx = fit_polynomial_line(leftx, ploty)
+    right_fitx = fit_polynomial_line(rightx, ploty)
 
-    plt.figure()
-    plt.imshow(warped, 'gray')
-    plt.plot(leftx, ploty, '.', color='red', linewidth=2)
-    plt.plot(rightx, ploty, '.', color='blue', linewidth=2)
-    plt.xlim(0, 1280)
-    plt.ylim(0, 720)
-    plt.gca().invert_yaxis()
+    ### 6. Determine the lane curvature
     
-    figpath = 'output_images/' + fname.split('/')[-1].split('.')[0] + '_detected_lanes.jpg'
-    plt.savefig(figpath)
-    
-    # Fit a second order polynomial to pixel positions in each fake lane line
-    left_fit = np.polyfit(ploty, leftx, 2)
-    left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
-    right_fit = np.polyfit(ploty, rightx, 2)
-    right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
-
-    plt.figure()
-    plt.plot(leftx, ploty, '.', color='red', linewidth=2)
-    plt.plot(rightx, ploty, '.', color='blue', linewidth=2)
-    plt.xlim(0, 1280)
-    plt.ylim(0, 720)
-    plt.plot(left_fitx, ploty, color='green', linewidth=2)
-    plt.plot(right_fitx, ploty, color='green', linewidth=2)
-    plt.gca().invert_yaxis() # to visualize as we do the images
-
-    figpath = 'output_images/' + fname.split('/')[-1].split('.')[0] + '_plotted_lines.jpg'
-    plt.savefig(figpath)
-
-    ### Determine the lane curvature
     left_curverad, right_curverad = calculate_curvature(ploty, leftx, rightx)
 
-    print('Radius of curvature:', left_curverad, 'm', right_curverad, 'm')
+    img_lanearea = draw_lane_area_to_road(img, img_warped, left_fitx, right_fitx, ploty)
     
-    result = draw_lane_area_to_road(img, warped, left_fitx, right_fitx, ploty)
+    return img_lanearea, left_curverad, right_curverad
 
-    plt.figure()
-    plt.imshow(result)
+def process_image(img):
+    
+    img_processed, __, __ = detect(img)
+    
+    return img_processed
 
+if __name__ == "__main__":
+
+    fname = 'test_images/test5.jpg'
+    img = mpimg.imread(fname)
+    plot_image(img, 'Original Image', True)
+
+    img_lanedetected, left_curverad, right_curverad = detect(img)
+    
+    print('Radius of curvature:', left_curverad, 'm', right_curverad, 'm')
+
+    plot_image(img_lanedetected, 'Detected Lane', True)
