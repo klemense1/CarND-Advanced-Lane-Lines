@@ -16,7 +16,7 @@ import thresholds
 
 plt.close("all")
 
-DEBUG_MODE = True
+DEBUG_MODE = False
 
 class Line():
     def __init__(self, queuelength):
@@ -417,9 +417,6 @@ def detect(img):
     
     left_curverad = left_line.radius_of_curvature
     right_curverad = right_line.radius_of_curvature
-
-    print(left_line.line_base_pos)
-    print(right_line.line_base_pos)
     
     offset = np.mean([left_line.line_base_pos, right_line.line_base_pos])
 
@@ -429,7 +426,7 @@ def detect(img):
 
 def process_image(img):
     
-    img_processed, __, __,  = detect(img)
+    img_processed, __, __, __ = detect(img)
     
     return img_processed
 
