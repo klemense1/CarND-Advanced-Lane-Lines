@@ -12,7 +12,7 @@ import pickle
 
 if __name__ == "__main__":
 
-    white_output = 'project_video_ke.mp4'
+    white_output = 'project_video_processed.mp4'
     clip1 = VideoFileClip("project_video.mp4")
     white_clip = clip1.fl_image(laneline.process_image) #NOTE: this function expects color images!!
     white_clip.write_videofile(white_output, audio=False)

@@ -16,8 +16,155 @@ import thresholds
 
 plt.close("all")
 
-DEBUG_MODE = False
+DEBUG_MODE = True
 
+class Line():
+    def __init__(self, queuelength):
+        self.queuelength = queuelength
+        # was the line detected in the last iteration?
+        self.detected = False
+        
+        # x values of the last n fits of the line
+        self.recent_fit_xval = []
+        #average x values of the fitted line over the last n iterations
+        self.avg_fit_xval = None # self.bestx = None
+        # x values of most recent fit
+        self.current_fit_xval = [np.array([False])]
+        
+        # x values of the last n fits of the line
+        self.recent_fit_coeff = [] 
+        #polynomial coefficients averaged over the last n iterations
+        self.avg_fit_coeff = None  # self.best_fit = None  
+        #polynomial coefficients for the most recent fit
+        self.current_fit_coeff = [np.array([False])]   ###
+        #difference in fit coefficients between last and new fits
+        self.diff_fit_coeff = np.array([0,0,0], dtype='float') 
+
+        # y values that lane shall be fitted for
+        self.fit_yval = np.linspace(0, 719, num=720)
+        #radius of curvature of the line in some units
+        self.radius_of_curvature = None 
+        #distance in meters of vehicle center from the line
+        self.line_base_pos = 0 
+        #x values for detected line pixels
+        self.allx = None  ###
+        #y values for detected line pixels
+        self.ally = None #  ###
+        
+    
+    def accept_lane(self):
+        flag = True
+        maxdist = 2.8  # distance in meters from the lane
+        if abs(self.line_base_pos) > maxdist:
+            print('lane too far away')
+            flag  = False        
+        if len(self.recent_fit_xval) > 0:
+            relative_delta = self.diff_fit_coeff / self.avg_fit_coeff
+            # allow maximally this percentage of variation in the fit coefficients from frame to frame
+            if not (abs(relative_delta)<np.array([0.7,0.5,0.15])).all():
+                print('fit coeffs too far off [%]',relative_delta)
+                flag=False
+                
+        return flag
+    
+    def set_current_fit_xval(self):
+        
+        quadratic = self.current_fit_coeff[0]*self.fit_yval**2
+        linear = self.current_fit_coeff[1]*self.fit_yval
+        offset = self.current_fit_coeff[2]
+        self.current_fit_xval = quadratic + linear + offset
+
+
+    def set_radius_of_curvature(self):
+        
+    # Define y-value where we want radius of curvature
+    # I'll choose the maximum y-value, corresponding to the bottom of the image
+
+        y_eval = np.max(self.fit_yval)
+
+        # Define conversions in x and y from pixels space to meters
+        ym_per_pix = 30/720 # meters per pixel in y dimension
+        xm_per_pix = 3.7/700 # meters per pixel in x dimension
+        
+        # Fit new polynomials to x,y in world space
+        line_fit_cr = np.polyfit(self.fit_yval*ym_per_pix, self.avg_fit_xval*xm_per_pix, 2)
+        # Calculate the new radii of curvature
+        line_curverad = ((1 + (2*line_fit_cr[0]*y_eval*ym_per_pix + line_fit_cr[1])**2)**1.5) / np.absolute(2*line_fit_cr[0])
+
+        self.radius_of_curvature = line_curverad
+
+
+    def set_line_base_pos(self):
+
+        y_eval = np.max(self.fit_yval)
+
+        quadratic = self.current_fit_coeff[0]*y_eval**2
+        linear = self.current_fit_coeff[1]*y_eval
+        offset = self.current_fit_coeff[2]
+        line_pos = quadratic + linear + offset
+    
+        basepos = 640 # half of image size
+        meter_per_pixel = 3.7/1000
+
+        self.line_base_pos = (basepos - line_pos)* meter_per_pixel
+
+
+    def set_diff_fit_coeff(self):
+
+        if len(self.recent_fit_coeff)>0:
+            self.diff_fit_coeff = self.current_fit_coeff - self.avg_fit_coeff
+        else:
+            self.diff_fit_coeff = np.array([0,0,0], dtype='float')            
+
+
+    def set_averages(self):
+        if len(self.recent_fit_coeff)>0:
+            self.avg_fit_coeff = np.array(self.recent_fit_coeff).mean(axis=0)
+        if len(self.recent_fit_xval)>0:
+            self.avg_fit_xval = np.array(self.recent_fit_xval).mean(axis=0)
+
+
+    def add_data_to_buffer(self):
+        if len(self.recent_fit_xval)==self.queuelength:
+            self.recent_fit_xval.pop(0)
+        self.recent_fit_xval.append(self.current_fit_xval)
+        
+        if len(self.recent_fit_coeff)==self.queuelength:
+            self.recent_fit_coeff.pop(0)
+        self.recent_fit_coeff.append(self.current_fit_coeff)
+
+
+    def remove_data_from_buffer(self):
+        self.recent_fit_xval.pop()
+
+
+    def update(self,line_xval, line_yval):
+        
+        self.allx = line_xval
+        self.ally = line_yval
+        
+        self.current_fit_coeff = np.polyfit(self.ally, self.allx, 2)
+
+        self.set_current_fit_xval()
+
+
+        self.set_diff_fit_coeff()
+        
+        if self.accept_lane():
+            self.detected=True
+            self.add_data_to_buffer()
+
+        else:
+            self.detected=False            
+            self.remove_data_from_buffer()
+
+        self.set_averages()
+
+        self.set_radius_of_curvature()
+
+        self.set_line_base_pos()
+
+        return self.detected
 
 def get_peaks(hist):
     
@@ -71,26 +218,7 @@ def perspective_transform(image, inverse=False):
         
         return transformed_image, dest_pts, source_pts
 
-
-def calculate_curvature(ploty, leftx, rightx):
     
-    # Define y-value where we want radius of curvature
-    # I'll choose the maximum y-value, corresponding to the bottom of the image
-    y_eval = np.max(ploty)
-
-    # Define conversions in x and y from pixels space to meters
-    ym_per_pix = 30/720 # meters per pixel in y dimension
-    xm_per_pix = 3.7/700 # meters per pixel in x dimension
-    
-    # Fit new polynomials to x,y in world space
-    left_fit_cr = np.polyfit(ploty*ym_per_pix, leftx*xm_per_pix, 2)
-    right_fit_cr = np.polyfit(ploty*ym_per_pix, rightx*xm_per_pix, 2)
-    # Calculate the new radii of curvature
-    left_curverad = ((1 + (2*left_fit_cr[0]*y_eval*ym_per_pix + left_fit_cr[1])**2)**1.5) / np.absolute(2*left_fit_cr[0])
-    right_curverad = ((1 + (2*right_fit_cr[0]*y_eval*ym_per_pix + right_fit_cr[1])**2)**1.5) / np.absolute(2*right_fit_cr[0])
-
-    return left_curverad, right_curverad
-
 def draw_lane_area_to_road(img, warped, left_fitx, right_fitx, yvals):
     ### Drawing the lines back down onto the road
     # Create an image to draw the lines on
@@ -116,7 +244,6 @@ def lines_from_hist(warped):
     img_size = warped.shape
     leftx = np.empty((img_size[0],1))
     rightx = np.empty((img_size[0],1))
-    ploty = np.linspace(0, 719, num=720)
 
     printing_size = 2*72
     windowsize = int(img_size[0]/4)
@@ -132,17 +259,27 @@ def lines_from_hist(warped):
             leftx[save_idx_start:save_idx_end] = left_peak
             rightx[save_idx_start:save_idx_end] = right_peak
 
-    return leftx, rightx, ploty
+    return leftx, rightx
 
-def fit_polynomial_line(xval, yval):
-    """
-    Fit a second order polynomial to pixel positions in lane line
-    """
-    line_fit = np.polyfit(yval, xval, 2)
-    line_fitx = line_fit[0]*yval**2 + line_fit[1]*yval + line_fit[2]
+#def fit_polynomial_line(xval, yval):
+#    """
+#    Fit a second order polynomial to pixel positions in lane line
+#    """
+#    line_fit = np.polyfit(yval, xval, 2)
+#    line_fitx = line_fit[0]*yval**2 + line_fit[1]*yval + line_fit[2]
+#
+#    return line_fitx
 
-    return line_fitx
+def mask_image(image):
+    
+    image_masked = image.copy()
+    mask = np.zeros(image_masked.shape, dtype=bool)
+    pixels_per_side = int(image.shape[1]/8)
+    mask[:, pixels_per_side:-pixels_per_side] = True
 
+    image_masked[~mask] = 0
+    
+    return image_masked
 
 def plot_image(image, title, debug_mode=False):
     
@@ -184,7 +321,7 @@ def plot_fitted_curve(leftx, rightx, ploty, debug_mode=False):
         figpath = 'output_images/plotted_lines.jpg'
         plt.savefig(figpath)
 
-def plot_transformed_perspective_binary(orig, transformed, saveasname, src=None, dst=None, debug_mode=False):
+def plot_transformed_perspective_binary(orig, transformed, src=None, dst=None, debug_mode=False):
     
     if debug_mode:
         red_color_int = (255,0,0)
@@ -244,39 +381,55 @@ def detect(img):
 
     img_warped, src, dst = perspective_transform(img_binary)
     
-    mask = np.zeros(img_warped.shape, dtype=bool)
-    mask[:, 150:-150] = True
-
-    img_warped[~mask] = 0
+    img_warped_masked = mask_image(img_warped)
 
     original_dict = {'Image': img.copy(),
                      'Title': 'Original Image'}
 
-    transformed_dict = {'Image': img_warped.copy(),
-                        'Title': 'Perspective Transformed Image'}
+    transformed_dict = {'Image': img_warped_masked.copy(),
+                        'Title': 'Perspective Transformed Image (masked)'}
      
     plot_transformed_perspective_binary(original_dict, transformed_dict, src, dst, DEBUG_MODE)
     
     ### 5. Detect lane lines
     
-    leftx, rightx, ploty = lines_from_hist(img_warped)
-
-    plot_detected_lines(img_warped, leftx, rightx, ploty, DEBUG_MODE)
+    left_line = Line(5)
+    right_line = Line(5)
     
-    left_fitx = fit_polynomial_line(leftx, ploty)
-    right_fitx = fit_polynomial_line(rightx, ploty)
+    leftx_detected, rightx_detected = lines_from_hist(img_warped_masked)
+    lefty_detected = np.linspace(0, 719, num=720)
+    righty_detected = np.linspace(0, 719, num=720)
+
+    left_line.update(leftx_detected, lefty_detected)
+    right_line.update(rightx_detected, righty_detected)
+
+    leftx = left_line.allx
+    lefty = left_line.ally
+    left_fitx = left_line.current_fit_xval
+
+    rightx = right_line.allx
+    righty = right_line.ally
+    right_fitx = right_line.current_fit_xval
+
+    plot_detected_lines(img_warped, leftx, rightx, lefty, DEBUG_MODE)
 
     ### 6. Determine the lane curvature
     
-    left_curverad, right_curverad = calculate_curvature(ploty, leftx, rightx)
+    left_curverad = left_line.radius_of_curvature
+    right_curverad = right_line.radius_of_curvature
 
-    img_lanearea = draw_lane_area_to_road(img, img_warped, left_fitx, right_fitx, ploty)
+    print(left_line.line_base_pos)
+    print(right_line.line_base_pos)
     
-    return img_lanearea, left_curverad, right_curverad
+    offset = np.mean([left_line.line_base_pos, right_line.line_base_pos])
+
+    img_lanearea = draw_lane_area_to_road(img, img_warped_masked, left_fitx, right_fitx, lefty)
+    
+    return img_lanearea, left_curverad, right_curverad, offset
 
 def process_image(img):
     
-    img_processed, __, __ = detect(img)
+    img_processed, __, __,  = detect(img)
     
     return img_processed
 
@@ -286,8 +439,9 @@ if __name__ == "__main__":
     img = mpimg.imread(fname)
     plot_image(img, 'Original Image', True)
 
-    img_lanedetected, left_curverad, right_curverad = detect(img)
+    img_lanedetected, left_curverad, right_curverad, off_cent = detect(img)
     
-    print('Radius of curvature:', left_curverad, 'm', right_curverad, 'm')
-
     plot_image(img_lanedetected, 'Detected Lane', True)
+
+    print('Radius of curvature, left:', left_curverad, 'm, right:', right_curverad, 'm')
+    print('Offcenter', off_cent, 'm')
