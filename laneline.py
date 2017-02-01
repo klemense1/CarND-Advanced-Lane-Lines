@@ -219,15 +219,23 @@ def perspective_transform(image, inverse=False):
         return transformed_image, dest_pts, source_pts
 
     
-def draw_lane_area_to_road(img, warped, left_fitx, right_fitx, yvals):
+def draw_lane_area_to_road(img, warped, line_left, line_right):
+    
+    left_fitx = line_left.avg_fit_xval
+    lefty = line_left.ally
+
+    right_fitx = line_right.avg_fit_xval
+    righty = line_right.ally
+
+        
     ### Drawing the lines back down onto the road
     # Create an image to draw the lines on
     warp_zero = np.zeros_like(warped).astype(np.uint8)
     color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
 
     # Recast the x and y points into usable format for cv2.fillPoly()
-    pts_left = np.array([np.transpose(np.vstack([left_fitx, yvals]))])
-    pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, yvals])))])
+    pts_left = np.array([np.transpose(np.vstack([left_fitx, lefty]))])
+    pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, righty])))])
     pts = np.hstack((pts_left, pts_right))
     
     # Draw the lane onto the warped blank image
@@ -261,16 +269,10 @@ def lines_from_hist(warped):
 
     return leftx, rightx
 
-#def fit_polynomial_line(xval, yval):
-#    """
-#    Fit a second order polynomial to pixel positions in lane line
-#    """
-#    line_fit = np.polyfit(yval, xval, 2)
-#    line_fitx = line_fit[0]*yval**2 + line_fit[1]*yval + line_fit[2]
-#
-#    return line_fitx
 
-def mask_image(image):
+def mask_image(image):#, mask_leftx, mask_rightx):
+    
+    
     
     image_masked = image.copy()
     mask = np.zeros(image_masked.shape, dtype=bool)
@@ -288,13 +290,19 @@ def plot_image(image, title, debug_mode=False):
         plt.imshow(image, cmap='gray')
         plt.title(title)
 
-def plot_detected_lines(image, leftx, rightx, ploty, debug_mode=False):
+def plot_detected_lines(image, line_left, line_right, debug_mode=False):
     
+    leftx = line_left.allx
+    lefty = line_left.ally
+
+    rightx = line_right.allx
+    righty = line_right.ally
+
     if debug_mode:
         plt.figure()
         plt.imshow(image, 'gray')
-        plt.plot(leftx, ploty, '.', color='red', linewidth=2)
-        plt.plot(rightx, ploty, '.', color='blue', linewidth=2)
+        plt.plot(leftx, lefty, '.', color='red', linewidth=2)
+        plt.plot(rightx, righty, '.', color='blue', linewidth=2)
         plt.xlim(0, 1280)
         plt.ylim(0, 720)
         plt.gca().invert_yaxis()
@@ -302,20 +310,25 @@ def plot_detected_lines(image, leftx, rightx, ploty, debug_mode=False):
         figpath = 'output_images/detected_lanes.jpg'
         plt.savefig(figpath)
 
-def plot_fitted_curve(leftx, rightx, ploty, debug_mode=False):
+def plot_fitted_curve(line_left, line_right, debug_mode=False):
     
     if debug_mode:
-        
-        left_fitx = fit_polynomial_line(leftx, ploty)
-        right_fitx = fit_polynomial_line(rightx, ploty)
+
+        leftx = line_left.allx
+        lefty = line_left.ally
+        left_fitx = line_left.current_fit_xval
+
+        rightx = line_right.allx
+        righty = line_right.ally
+        right_fitx = line_right.current_fit_xval
         
         plt.figure()
-        plt.plot(leftx, ploty, '.', color='red', linewidth=2)
-        plt.plot(rightx, ploty, '.', color='blue', linewidth=2)
+        plt.plot(leftx, lefty, '.', color='red', linewidth=2)
+        plt.plot(rightx, righty, '.', color='blue', linewidth=2)
         plt.xlim(0, 1280)
         plt.ylim(0, 720)
-        plt.plot(left_fitx, ploty, color='green', linewidth=2)
-        plt.plot(right_fitx, ploty, color='green', linewidth=2)
+        plt.plot(left_fitx, lefty, color='green', linewidth=2)
+        plt.plot(right_fitx, righty, color='green', linewidth=2)
         plt.gca().invert_yaxis() # to visualize as we do the images
 
         figpath = 'output_images/plotted_lines.jpg'
@@ -378,23 +391,29 @@ def detect(img):
     plot_image(img_binary, 'binary ... combined thresholds', DEBUG_MODE)
 
     ### 4. Perspective transform
-
-    img_warped, src, dst = perspective_transform(img_binary)
     
-    img_warped_masked = mask_image(img_warped)
+    img_warped, src, dst = perspective_transform(img_binary)
 
+    left_line = Line(8)
+    right_line = Line(8)
+
+    mask_leftx = np.ones(720)*160
+    mask_lefty = np.linspace(0, 719, num=720)
+
+    mask_rightx = np.ones(720)*1120
+    mask_righty = np.linspace(0, 719, num=720)
+
+    img_warped_masked = mask_image(img_warped)#, mask_leftx, mask_lefty)
+    
     original_dict = {'Image': img.copy(),
                      'Title': 'Original Image'}
 
     transformed_dict = {'Image': img_warped_masked.copy(),
                         'Title': 'Perspective Transformed Image (masked)'}
-     
+
     plot_transformed_perspective_binary(original_dict, transformed_dict, src, dst, DEBUG_MODE)
     
     ### 5. Detect lane lines
-    
-    left_line = Line(5)
-    right_line = Line(5)
     
     leftx_detected, rightx_detected = lines_from_hist(img_warped_masked)
     lefty_detected = np.linspace(0, 719, num=720)
@@ -403,15 +422,9 @@ def detect(img):
     left_line.update(leftx_detected, lefty_detected)
     right_line.update(rightx_detected, righty_detected)
 
-    leftx = left_line.allx
-    lefty = left_line.ally
-    left_fitx = left_line.current_fit_xval
-
-    rightx = right_line.allx
-    righty = right_line.ally
-    right_fitx = right_line.current_fit_xval
-
-    plot_detected_lines(img_warped, leftx, rightx, lefty, DEBUG_MODE)
+    plot_detected_lines(img_warped, left_line, right_line, DEBUG_MODE)
+    
+    plot_fitted_curve(left_line, right_line, DEBUG_MODE)
 
     ### 6. Determine the lane curvature
     
@@ -420,7 +433,7 @@ def detect(img):
     
     offset = np.mean([left_line.line_base_pos, right_line.line_base_pos])
 
-    img_lanearea = draw_lane_area_to_road(img, img_warped_masked, left_fitx, right_fitx, lefty)
+    img_lanearea = draw_lane_area_to_road(img, img_warped_masked, left_line, right_line)
     
     return img_lanearea, left_curverad, right_curverad, offset
 
