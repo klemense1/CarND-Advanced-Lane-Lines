@@ -11,6 +11,7 @@ import cv2
 import pickle
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
+from moviepy.editor import VideoFileClip
 
 import thresholds
 
@@ -51,7 +52,7 @@ class Line():
         #y values for detected line pixels
         self.ally = None #  ###
 
-        self.width_lookup = 2*np.linspace(150, 75, self.queuelength +1).astype(int)
+        self.width_lookup = 2*np.linspace(220, 100, self.queuelength +1).astype(int)
         # window apllied to find the lane in pixels
         self.lane_width_window = self.width_lookup[0]
 
@@ -61,12 +62,12 @@ class Line():
         if abs(self.line_base_pos) > maxdist:
             print('lane too far away')
             flag  = False        
-        if len(self.recent_fit_xval) > 0:
-            relative_delta = self.diff_fit_coeff / self.avg_fit_coeff
-            # allow maximally this percentage of variation in the fit coefficients from frame to frame
-            if not (abs(relative_delta)<np.array([0.7,0.5,0.15])).all():
-                print('fit coeffs too far off [%]',relative_delta)
-                flag=False
+#        if len(self.recent_fit_xval) > 0:
+#            relative_delta = self.diff_fit_coeff / self.avg_fit_coeff
+#            # allow maximally this percentage of variation in the fit coefficients from frame to frame
+#            if not (abs(relative_delta)<np.array([1,1,0.5])).all():
+#                print('fit coeffs too far off [%]',relative_delta)
+#                flag=False
                 
         return flag
     
@@ -128,14 +129,20 @@ class Line():
 
 
     def add_data_to_buffer(self):
+#        print('ADDDING TO BUFFER', self.recent_fit_coeff)
+#        print('self.current_fit_xval', self.current_fit_coeff)
         if len(self.recent_fit_xval)==self.queuelength:
             self.recent_fit_xval.pop(0)
+#            print('Maximum queue length')
+
         self.recent_fit_xval.append(self.current_fit_xval)
         
         if len(self.recent_fit_coeff)==self.queuelength:
             self.recent_fit_coeff.pop(0)
-        self.recent_fit_coeff.append(self.current_fit_coeff)
+#            print('Maximum queue length')
 
+        self.recent_fit_coeff.append(self.current_fit_coeff)
+#        print('ADDED TO BUFFER', self.recent_fit_coeff)
 
     def remove_data_from_buffer(self):
         self.recent_fit_xval.pop()
@@ -143,6 +150,26 @@ class Line():
     def set_lane_width_window(self):
         idx = len(self.recent_fit_coeff) 
         self.lane_width_window = self.width_lookup[idx]
+
+    def check_position_with_other_line(self, current_fit_xval):
+        
+        # Checking that they have similar curvature
+        # Checking that they are separated by approximately the right distance horizontally
+#        if abs(self.line_base_pos - line_base_pos) > 3.7:
+#            print('distance of lines is not plausible')
+        # Checking that they are roughly parallel
+        if len(self.recent_fit_xval)>0:
+            if abs(self.current_fit_xval - current_fit_xval).max() > 850 or abs(self.current_fit_xval - current_fit_xval).min() < 550:
+                print('Not plausible with other line')
+                self.remove_data_from_buffer()
+        
+                self.set_averages()
+        
+                self.set_radius_of_curvature()
+        
+                self.set_line_base_pos()
+                
+                self.set_lane_width_window()
 
     def update(self,line_xval, line_yval):
         
@@ -157,10 +184,12 @@ class Line():
         self.set_diff_fit_coeff()
         
         if self.accept_lane():
+#            print('Line accepted')
             self.detected=True
             self.add_data_to_buffer()
 
         else:
+#            print('Line not accepter')
             self.detected=False            
             self.remove_data_from_buffer()
 
@@ -171,7 +200,7 @@ class Line():
         self.set_line_base_pos()
         
         self.set_lane_width_window()
-
+#        print('Updated, buffer = ', len(self.recent_fit_coeff))
         return self.detected
 
 def get_peaks(hist):
@@ -234,7 +263,6 @@ def draw_lane_area_to_road(img, warped, line_left, line_right):
 
     right_fitx = line_right.avg_fit_xval
     righty = line_right.ally
-
         
     ### Drawing the lines back down onto the road
     # Create an image to draw the lines on
@@ -319,7 +347,7 @@ def right_line_mask(shape, line_inst):
         xvals = line_inst.avg_fit_xval
 
     half_mask_width = int(line_inst.lane_width_window/2)
-
+#    print('Line-mask-width', half_mask_width*2)
     right_mask = create_line_mask(shape, xvals, yvals, half_mask_width)
     
     return right_mask
@@ -440,7 +468,10 @@ def plot_transformed_perspective_binary(orig, transformed, src=None, dst=None, d
         plt.savefig(figpath)
 
 def detect(img):
-    
+
+    global left_line
+    global right_line
+
     ### 1. Camera calibration
 
     dist_pickle = pickle.load(open("wide_dist_pickle.p", "rb"))
@@ -459,9 +490,6 @@ def detect(img):
     ### 4. Perspective transform
     
     img_warped, src, dst = perspective_transform(img_binary)
-
-    left_line = Line(8)
-    right_line = Line(8)
 
     left_lane_mask = left_line_mask(img_warped.shape, left_line)#, mask_leftx, mask_lefty)
 
@@ -486,9 +514,17 @@ def detect(img):
     lefty_detected = np.linspace(0, 719, num=720)
     righty_detected = np.linspace(0, 719, num=720)
 
+    
     left_line.update(leftx_detected, lefty_detected)
     right_line.update(rightx_detected, righty_detected)
 
+    left_current_fit_xval = left_line.current_fit_xval
+    right_current_fit_xval = right_line.current_fit_xval
+
+    left_line.check_position_with_other_line(right_current_fit_xval)
+    right_line.check_position_with_other_line(left_current_fit_xval)
+
+    
     plot_detected_lines(img_warped, left_line, right_line, DEBUG_MODE)
     
     plot_fitted_curve(left_line, right_line, DEBUG_MODE)
@@ -498,30 +534,68 @@ def detect(img):
     left_curverad = left_line.radius_of_curvature
     right_curverad = right_line.radius_of_curvature
     
-    offset = np.mean([left_line.line_base_pos, right_line.line_base_pos])
+    offset = round(np.mean([left_line.line_base_pos, right_line.line_base_pos]), 2)
 
     img_lanearea = draw_lane_area_to_road(img, img_warped, left_line, right_line)
 
     img_lanearea = draw_line_window_to_road(img_lanearea, left_lane_mask)
     img_lanearea = draw_line_window_to_road(img_lanearea, right_lane_mask)
 
-    return img_lanearea, left_curverad, right_curverad, offset
+    
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    
+    str1 = str('Offset: '+str(offset)+'m')
+    cv2.putText(img_lanearea, str1, (430,70), font, 1, (255,0,0), 2, cv2.LINE_AA)
+    
+    if left_line.radius_of_curvature and right_line.radius_of_curvature:
+        curvature = round(np.mean([left_line.radius_of_curvature, right_line.radius_of_curvature]), 1)
+        str2 = str('radius of curvature: '+str(curvature)+'m')
+        cv2.putText(img_lanearea, str2, (430,110), font, 1, (255,0,0), 2, cv2.LINE_AA)    
+    
+    cv2.putText(img_lanearea, 'left position: ' + str(float(left_line.line_base_pos.round(1))), (70,170), font, 1, (255,0,0), 2, cv2.LINE_AA)
+    cv2.putText(img_lanearea, 'right position: ' + str(float(right_line.line_base_pos.round(1))), (730,170), font, 1, (255,0,0), 2, cv2.LINE_AA)
+ 
+    cv2.putText(img_lanearea, 'left window: ' + str(float(left_line.lane_width_window.round(1))), (70,210), font, 1, (255,0,0), 2, cv2.LINE_AA)
+    cv2.putText(img_lanearea, 'right window: ' + str(float(right_line.lane_width_window.round(1))), (730,210), font, 1, (255,0,0), 2, cv2.LINE_AA)
+    
+    coeff = left_line.current_fit_coeff
+    msg = '{}, {}, {}'.format(coeff[0].round(2), coeff[1].round(1), coeff[2].round(0))
+    cv2.putText(img_lanearea, 'fit coeff: ' + msg, (130,250), font, 1, (255,0,0), 2, cv2.LINE_AA)
+
+    coeff = right_line.current_fit_coeff
+    msg = '{}, {}, {}'.format(coeff[0].round(2), coeff[1].round(1), coeff[2].round(0))
+    cv2.putText(img_lanearea, 'fit coeff: ' + msg, (730,250), font, 1, (255,0,0), 2, cv2.LINE_AA)
+
+    string = 'Buffer ' + ''.join(['I']*len(left_line.recent_fit_xval))
+    cv2.putText(img_lanearea, string, (30,60), font, 1, (0,0,0), 2, cv2.LINE_AA)
+
+
+    return img_lanearea
 
 def process_image(img):
     
-    img_processed, __, __, __ = detect(img)
+    global left_line
+    global right_line
+
+    img_processed = detect(img)
     
     return img_processed
 
 if __name__ == "__main__":
 
+    left_line = Line(8)
+    right_line = Line(8)
+
     fname = 'test_images/straight_lines1.jpg'
     img = mpimg.imread(fname)
     plot_image(img, 'Original Image', True)
 
-    img_lanedetected, left_curverad, right_curverad, off_cent = detect(img)
+    img_lanedetected = detect(img)
     
     plot_image(img_lanedetected, 'Detected Lane', True)
 
-    print('Radius of curvature, left:', left_curverad, 'm, right:', right_curverad, 'm')
-    print('Offcenter', off_cent, 'm')
+
+#    white_output = 'project_video_processed.mp4'
+#    clip1 = VideoFileClip("project_video.mp4")
+#    white_clip = clip1.fl_image(process_image) #NOTE: this function expects color images!!
+#    white_clip.write_videofile(white_output, audio=False)

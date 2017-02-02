@@ -40,7 +40,6 @@ for nx in [6, 7, 8, 9]:
 
                 imgpoints.append(corners)
                 objpoints.append(objp)
-                image_list_used.append(fname)
             
                 print('Found corners in', fname, 'with nx=', nx, ', ny=', ny)
 
@@ -51,10 +50,6 @@ for nx in [6, 7, 8, 9]:
 
                 cv2.imwrite(write_name, img)
 
-if images == image_list_used:
-    print('All Images used')
-else:
-    print('Not all images used')
 
 for test_file_name in images:
 # Test undistortion on an image
