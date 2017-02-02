@@ -50,8 +50,11 @@ class Line():
         self.allx = None  ###
         #y values for detected line pixels
         self.ally = None #  ###
-        
-    
+
+        self.width_lookup = 2*np.linspace(150, 75, self.queuelength +1).astype(int)
+        # window apllied to find the lane in pixels
+        self.lane_width_window = self.width_lookup[0]
+
     def accept_lane(self):
         flag = True
         maxdist = 2.8  # distance in meters from the lane
@@ -137,6 +140,9 @@ class Line():
     def remove_data_from_buffer(self):
         self.recent_fit_xval.pop()
 
+    def set_lane_width_window(self):
+        idx = len(self.recent_fit_coeff) 
+        self.lane_width_window = self.width_lookup[idx]
 
     def update(self,line_xval, line_yval):
         
@@ -163,6 +169,8 @@ class Line():
         self.set_radius_of_curvature()
 
         self.set_line_base_pos()
+        
+        self.set_lane_width_window()
 
         return self.detected
 
@@ -247,6 +255,23 @@ def draw_lane_area_to_road(img, warped, line_left, line_right):
     combined = cv2.addWeighted(img, 1, newwarp, 0.3, 0)
     
     return combined
+    
+def draw_line_window_to_road(img, line_mask):
+
+    # Create an image to draw the lines on
+    empty = np.zeros_like(line_mask).astype(np.uint8)
+
+    mask_colour = 255 * np.dstack((empty,
+                                   empty,
+                                   line_mask.astype(np.uint8)))
+
+    # Warp the blank back to original image space using inverse perspective matrix (Minv)
+    mask_warped, _, __ = perspective_transform(mask_colour, inverse=True)
+
+    # Combine the result with the original image
+    combined = cv2.addWeighted(img, 1, mask_warped, 0.2, 0)
+
+    return combined
 
 def lines_from_hist(warped):
     img_size = warped.shape
@@ -282,6 +307,47 @@ def mask_image(image):#, mask_leftx, mask_rightx):
     image_masked[~mask] = 0
     
     return image_masked
+
+def right_line_mask(shape, line_inst):
+    
+    if len(line_inst.recent_fit_xval) == 0:
+        xvals = np.ones(720)*950
+        yvals = np.linspace(0, 719, num=720)
+
+    else:
+        yvals = line_inst.ally
+        xvals = line_inst.avg_fit_xval
+
+    half_mask_width = int(line_inst.lane_width_window/2)
+
+    right_mask = create_line_mask(shape, xvals, yvals, half_mask_width)
+    
+    return right_mask
+
+def left_line_mask(shape, line_inst):
+    
+    if len(line_inst.recent_fit_xval) == 0:
+        xvals = np.ones(720)*300
+        yvals = np.linspace(0, 719, num=720)
+    
+    else:
+        yvals = line_inst.ally
+        xvals = line_inst.avg_fit_xval
+
+    half_mask_width = int(line_inst.lane_width_window/2)
+
+    left_mask = create_line_mask(shape, xvals, yvals, half_mask_width)
+    
+    return left_mask
+
+def create_line_mask(shape, xvals, yvals, shift_pixels):
+
+    mask = np.zeros(shape, dtype=bool)
+
+    for idx, pixel_y in enumerate(yvals):
+        mask[pixel_y, xvals[idx]-shift_pixels:xvals[idx]+shift_pixels] = True
+
+    return mask
 
 def plot_image(image, title, debug_mode=False):
     
@@ -397,25 +463,26 @@ def detect(img):
     left_line = Line(8)
     right_line = Line(8)
 
-    mask_leftx = np.ones(720)*160
-    mask_lefty = np.linspace(0, 719, num=720)
+    left_lane_mask = left_line_mask(img_warped.shape, left_line)#, mask_leftx, mask_lefty)
 
-    mask_rightx = np.ones(720)*1120
-    mask_righty = np.linspace(0, 719, num=720)
+    right_lane_mask = right_line_mask(img_warped.shape, right_line)
 
-    img_warped_masked = mask_image(img_warped)#, mask_leftx, mask_lefty)
-    
+    plot_image(left_lane_mask, 'Mask left', True)
+    plot_image(right_lane_mask, 'Mask right', True)
+
+    img_warped[(left_lane_mask == 0) & (right_lane_mask == 0)] = 0
+
     original_dict = {'Image': img.copy(),
                      'Title': 'Original Image'}
 
-    transformed_dict = {'Image': img_warped_masked.copy(),
+    transformed_dict = {'Image': img_warped.copy(),
                         'Title': 'Perspective Transformed Image (masked)'}
 
     plot_transformed_perspective_binary(original_dict, transformed_dict, src, dst, DEBUG_MODE)
     
     ### 5. Detect lane lines
     
-    leftx_detected, rightx_detected = lines_from_hist(img_warped_masked)
+    leftx_detected, rightx_detected = lines_from_hist(img_warped)
     lefty_detected = np.linspace(0, 719, num=720)
     righty_detected = np.linspace(0, 719, num=720)
 
@@ -433,8 +500,11 @@ def detect(img):
     
     offset = np.mean([left_line.line_base_pos, right_line.line_base_pos])
 
-    img_lanearea = draw_lane_area_to_road(img, img_warped_masked, left_line, right_line)
-    
+    img_lanearea = draw_lane_area_to_road(img, img_warped, left_line, right_line)
+
+    img_lanearea = draw_line_window_to_road(img_lanearea, left_lane_mask)
+    img_lanearea = draw_line_window_to_road(img_lanearea, right_lane_mask)
+
     return img_lanearea, left_curverad, right_curverad, offset
 
 def process_image(img):
@@ -445,7 +515,7 @@ def process_image(img):
 
 if __name__ == "__main__":
 
-    fname = 'test_images/test5.jpg'
+    fname = 'test_images/straight_lines1.jpg'
     img = mpimg.imread(fname)
     plot_image(img, 'Original Image', True)
 
