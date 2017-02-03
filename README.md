@@ -18,17 +18,18 @@ The goals / steps of this project are the following:
 
 [//]: # (Image References)
 
-[image_calibration1]: ./camera_cal/corners/corners_found_ny6_nx8_calibration2.png "Corners with ny=6 and nx=8"
-[image_calibration1]: ./camera_cal/corners/corners_found_ny6_nx9_calibration2.png "Corners with ny=6 and nx=9"
-[image_calibration3]: ./camera_cal/undistored/undistort_output_calibration1.png "Undistorted image 1"
+[image_calibration1]: ./camera_cal/corners/corners_found_ny6_nx8_calibration2.jpg "Corners with ny=6 and nx=8"
+[image_calibration2]: ./camera_cal/corners/corners_found_ny6_nx9_calibration2.jpg "Corners with ny=6 and nx=9"
+[image_calibration3]: ./camera_cal/undistored/undistort_output_calibration1.jpg "Undistorted image 1"
 
+[image_original]: test_images/test1.jpg "Undistorted lane image"
 [image_undistored]: output_images/undistored.png "Undistorted lane image"
 [image_binary]: output_images/binarycombinedthresholds.png "Binary lane image"
-[image_warped]: binarycombinedthresholds/transformed_perspective.png "Warped image"
-[image_detected_lines]: binarycombinedthresholds/detected_lanes.png "Detected Lines"
-[image_plotted_lines]: binarycombinedthresholds/plotted_lines.png "Fitted curve through detected Lines"
+[image_warped]: output_images/transformed_perspective.png "Warped image"
+[image_detected_lines]: output_images/detected_lanes.png "Detected Lines"
+[image_plotted_lines]: output_images/plotted_lines.png "Fitted curve through detected Lines"
 
-[image_final]: ./examples/detected_lane.png "Output image"
+[image_final]: output_images/detected_lane.png "Output image"
 
 [video1]: ./project_video_processed.mp4 "Video Output"
 
@@ -71,7 +72,7 @@ After having a closer look on them, I realized that those images only had a frac
         ...
 Identifying not all corners does not hurt, as can be seen in the following pictures:
 
-![Undistored Image 1](camera_cal/undistored/undistort_output_calibration1.jpg)
+![alt text][image_calibration1]
 
 ![alt text][image_calibration2]
 
@@ -85,11 +86,14 @@ Finally, I saved the calibration data as a pickle, so that the calibration does 
 
 ####1. Provide an example of a distortion-corrected image.
 To demonstrate this step, I will describe how I apply the distortion correction to one of the test images like this one:
-![alt text][image2]
+![alt text][image_original]
 ####2. Describe how (and identify where in your code) you used color transforms, gradients or other methods to create a thresholded binary image.  Provide an example of a binary image result.
-I used a combination of color and gradient thresholds to generate a binary image (thresholding steps at lines # through # in `another_file.py`).  Here's an example of my output for this step.  (note: this is not actually from one of the test images)
 
-![alt text][image3]
+![alt text][image_undistored]
+
+I used a combination of color and gradient thresholds to generate a binary image (thresholding steps in `thresholds.py`).  Here's an example of my output for this step.
+
+![alt text][image_binary]
 
 ####3. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
 
@@ -119,13 +123,15 @@ This resulted in the following source and destination points:
 
 I verified that my perspective transform was working as expected by drawing the `src` and `dst` points onto a test image and its warped counterpart to verify that the lines appear parallel in the warped image.
 
-![alt text][image4]
+![alt text][image_warped]
 
 ####4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
 
+![alt text][image_detected_lines]
+
 Then I did some other stuff and fit my lane lines with a 2nd order polynomial kinda like this:
 
-![alt text][image5]
+![alt text][image_plotted_lines]
 
 ####5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
 
@@ -135,7 +141,7 @@ I did this in lines # through # in my code in `my_other_file.py`
 
 I implemented this step in lines # through # in my code in `yet_another_file.py` in the function `map_lane()`.  Here is an example of my result on a test image:
 
-![alt text][image6]
+![alt text][image_final]
 
 ---
 
@@ -143,7 +149,7 @@ I implemented this step in lines # through # in my code in `yet_another_file.py`
 
 ####1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (wobbly lines are ok but no catastrophic failures that would cause the car to drive off the road!).
 
-Here's a [link to my video result](./project_video.mp4)
+Here's a [link to my video result][video1]
 
 ---
 
