@@ -25,6 +25,8 @@ class Line():
         # was the line detected in the last iteration?
         self.detected = False
         
+        self.buffer = 0
+        
         # x values of the last n fits of the line
         self.recent_fit_xval = []
         #average x values of the fitted line over the last n iterations
@@ -52,27 +54,16 @@ class Line():
         #y values for detected line pixels
         self.ally = None #  ###
 
-        self.width_lookup = 2*np.linspace(220, 100, self.queuelength +1).astype(int)
+        # table with line width decay
+        self.width_decay = 2*np.linspace(220, 100, self.queuelength +1).astype(int)
         # window apllied to find the lane in pixels
-        self.lane_width_window = self.width_lookup[0]
+        self.lane_width_window = self.width_decay[0]
 
-    def accept_lane(self):
-        flag = True
-        maxdist = 2.8  # distance in meters from the lane
-        if abs(self.line_base_pos) > maxdist:
-            print('lane too far away')
-            flag  = False        
-#        if len(self.recent_fit_xval) > 0:
-#            relative_delta = self.diff_fit_coeff / self.avg_fit_coeff
-#            # allow maximally this percentage of variation in the fit coefficients from frame to frame
-#            if not (abs(relative_delta)<np.array([1,1,0.5])).all():
-#                print('fit coeffs too far off [%]',relative_delta)
-#                flag=False
-                
-        return flag
-    
+
     def set_current_fit_xval(self):
-        
+        """
+        calculates x values from fitted polynomial
+        """
         quadratic = self.current_fit_coeff[0]*self.fit_yval**2
         linear = self.current_fit_coeff[1]*self.fit_yval
         offset = self.current_fit_coeff[2]
@@ -80,26 +71,25 @@ class Line():
 
 
     def set_radius_of_curvature(self):
-        
-    # Define y-value where we want radius of curvature
-    # I'll choose the maximum y-value, corresponding to the bottom of the image
-
-        y_eval = np.max(self.fit_yval)
-
-        # Define conversions in x and y from pixels space to meters
-        ym_per_pix = 30/720 # meters per pixel in y dimension
-        xm_per_pix = 3.7/700 # meters per pixel in x dimension
-        
-        # Fit new polynomials to x,y in world space
-        line_fit_cr = np.polyfit(self.fit_yval*ym_per_pix, self.avg_fit_xval*xm_per_pix, 2)
-        # Calculate the new radii of curvature
-        line_curverad = ((1 + (2*line_fit_cr[0]*y_eval*ym_per_pix + line_fit_cr[1])**2)**1.5) / np.absolute(2*line_fit_cr[0])
-
-        self.radius_of_curvature = line_curverad
+        """
+        calculates radius of curvature from avg_fit_xval
+        """
+        if self.buffer>0:
+            y_eval = np.max(self.fit_yval)
+    
+            y_meter_per_pix = 30/720
+            x_meter_per_pix = 3.7/700
+            
+            line_fit_cr = np.polyfit(self.fit_yval*y_meter_per_pix, self.avg_fit_xval*x_meter_per_pix, 2)
+            line_curverad = ((1 + (2*line_fit_cr[0]*y_eval*y_meter_per_pix + line_fit_cr[1])**2)**1.5) / np.absolute(2*line_fit_cr[0])
+    
+            self.radius_of_curvature = line_curverad
 
 
     def set_line_base_pos(self):
-
+        """
+        sets position, where line hits bottom of window
+        """
         y_eval = np.max(self.fit_yval)
 
         quadratic = self.current_fit_coeff[0]*y_eval**2
@@ -107,59 +97,77 @@ class Line():
         offset = self.current_fit_coeff[2]
         line_pos = quadratic + linear + offset
     
-        basepos = 640 # half of image size
+        basepos = 640
         meter_per_pixel = 3.7/1000
 
-        self.line_base_pos = (basepos - line_pos)* meter_per_pixel
+        self.line_base_pos = (basepos - line_pos) * meter_per_pixel
 
 
     def set_diff_fit_coeff(self):
-
-        if len(self.recent_fit_coeff)>0:
+        """
+        sets difference between current fitting coefficients of line 
+        and averaged fitting coefficients
+        """
+        if self.buffer>0:
             self.diff_fit_coeff = self.current_fit_coeff - self.avg_fit_coeff
         else:
             self.diff_fit_coeff = np.array([0,0,0], dtype='float')            
 
 
     def set_averages(self):
-        if len(self.recent_fit_coeff)>0:
+        """
+        set average values for fitting coefficient and fitted x values
+        """
+        if self.buffer>0:
             self.avg_fit_coeff = np.array(self.recent_fit_coeff).mean(axis=0)
-        if len(self.recent_fit_xval)>0:
+        if self.buffer>0:
             self.avg_fit_xval = np.array(self.recent_fit_xval).mean(axis=0)
 
 
     def add_data_to_buffer(self):
-#        print('ADDDING TO BUFFER', self.recent_fit_coeff)
-#        print('self.current_fit_xval', self.current_fit_coeff)
-        if len(self.recent_fit_xval)==self.queuelength:
+        """
+        adds new data to buffer. If buffer has maximum length, the oldes value
+        value will be dropped
+        """
+        if self.buffer==self.queuelength:
             self.recent_fit_xval.pop(0)
-#            print('Maximum queue length')
 
         self.recent_fit_xval.append(self.current_fit_xval)
         
-        if len(self.recent_fit_coeff)==self.queuelength:
+        if self.buffer==self.queuelength:
             self.recent_fit_coeff.pop(0)
-#            print('Maximum queue length')
 
         self.recent_fit_coeff.append(self.current_fit_coeff)
-#        print('ADDED TO BUFFER', self.recent_fit_coeff)
+        
+        self.buffer = len(self.recent_fit_xval)
+
 
     def remove_data_from_buffer(self):
+        """
+        removes data from buffer
+        """
         self.recent_fit_xval.pop()
+        self.recent_fit_coeff.pop()
+
+        self.buffer = len(self.recent_fit_xval)
+
 
     def set_lane_width_window(self):
-        idx = len(self.recent_fit_coeff) 
-        self.lane_width_window = self.width_lookup[idx]
+        idx = self.buffer
+        self.lane_width_window = self.width_decay[idx]
+
 
     def check_position_with_other_line(self, current_fit_xval):
-        
-        # Checking that they have similar curvature
-        # Checking that they are separated by approximately the right distance horizontally
-#        if abs(self.line_base_pos - line_base_pos) > 3.7:
-#            print('distance of lines is not plausible')
-        # Checking that they are roughly parallel
-        if len(self.recent_fit_xval)>0:
-            if abs(self.current_fit_xval - current_fit_xval).max() > 850 or abs(self.current_fit_xval - current_fit_xval).min() < 550:
+        """
+        Checks, whether fitted xvalues are plausibel with other line's values.
+        If not, the lastly added values are droped and resulting information
+        are re-calculated
+        """
+        if self.buffer > 0:
+            lines_too_far = abs(self.current_fit_xval - current_fit_xval).max() > 850
+            lines_too_close = abs(self.current_fit_xval - current_fit_xval).min() < 550
+
+            if lines_too_far or lines_too_close:
                 print('Not plausible with other line')
                 self.remove_data_from_buffer()
         
@@ -171,8 +179,11 @@ class Line():
                 
                 self.set_lane_width_window()
 
-    def update(self,line_xval, line_yval):
-        
+
+    def update(self, line_xval, line_yval):
+        """
+        updates line class with new detected x and y values of line
+        """
         self.allx = line_xval
         self.ally = line_yval
         
@@ -180,18 +191,9 @@ class Line():
 
         self.set_current_fit_xval()
 
-
         self.set_diff_fit_coeff()
         
-        if self.accept_lane():
-#            print('Line accepted')
-            self.detected=True
-            self.add_data_to_buffer()
-
-        else:
-#            print('Line not accepter')
-            self.detected=False            
-            self.remove_data_from_buffer()
+        self.add_data_to_buffer()
 
         self.set_averages()
 
@@ -200,11 +202,21 @@ class Line():
         self.set_line_base_pos()
         
         self.set_lane_width_window()
-#        print('Updated, buffer = ', len(self.recent_fit_coeff))
+
         return self.detected
 
+
 def get_peaks(hist):
+    """
+    calculates peak for left and right half plane of given histogram
     
+    parameters:
+        hist ... histogram
+        
+    returns:
+        peak_left ... location of left peak in hist
+        peak_right ... location of right peak in hist
+    """
     maxlength = len(hist)
 
     hist_left_plane = np.array(hist)
@@ -217,15 +229,31 @@ def get_peaks(hist):
     peak_right = hist_right_plane.argmax()
 
     return peak_left, peak_right
-    
+
+
 def undistort(img, mtx, dist):
+    """
+    undistores the image
+    
+    parameters:
+        img ... distored image
+        mtx ... input camera matrix
+        dist ... input vector of distortion coefficients
+    
+    returns:
+        undist ... undistored image
+    """
     undist = cv2.undistort(img, mtx, dist, None, mtx)
     return undist
 
     
 def perspective_transform(image, inverse=False):
     """
+    performs a perspective transform. The inverse operation is also possible
     
+    parameters:
+        image ... input image
+        inverse ... boolean allowing for transformation or inverse transf.
     """
 
     img_size = (image.shape[1], image.shape[0])
@@ -236,19 +264,23 @@ def perspective_transform(image, inverse=False):
                      [(img_size[0] * 5 / 6) + 50, img_size[1]],
                      [(img_size[0] / 2 + 60), img_size[1] / 2 + 100]]
                      )
+
     dest_pts = np.float32(
                      [[(img_size[0] / 4), 0],
                      [(img_size[0] / 4), img_size[1]],
                      [(img_size[0] * 3 / 4), img_size[1]],
                      [(img_size[0] * 3 / 4), 0]]
                      )
+
     if inverse==False:
+
         M = cv2.getPerspectiveTransform(source_pts, dest_pts)
     
         transformed_image = cv2.warpPerspective(image, M, img_size, flags=cv2.INTER_LINEAR)
         
         return transformed_image, source_pts, dest_pts
     else:
+
         Minv = cv2.getPerspectiveTransform(dest_pts, source_pts)
     
         transformed_image = cv2.warpPerspective(image, Minv, img_size, flags=cv2.INTER_LINEAR)
@@ -256,109 +288,144 @@ def perspective_transform(image, inverse=False):
         return transformed_image, dest_pts, source_pts
 
     
-def draw_lane_area_to_road(img, warped, line_left, line_right):
+def draw_lane_area_to_road(img, warped_shape, line_left, line_right):
+    """
+    Draws the area beween left and right line to an image. The fitted values
+    in the line objects are recasted into usable format for cv2.fillPoly().
+    The drawn polygon is then transformed back on the road.
     
+    parameters:
+        img ... input image
+        warped_shape ... warped image
+        line_left ... line object of left line
+        line_right ... line object of right line
+    
+    returns:
+        combined ... output image with lane area drawn at
+    """
+
     left_fitx = line_left.avg_fit_xval
     lefty = line_left.ally
 
     right_fitx = line_right.avg_fit_xval
     righty = line_right.ally
         
-    ### Drawing the lines back down onto the road
-    # Create an image to draw the lines on
-    warp_zero = np.zeros_like(warped).astype(np.uint8)
+    warp_zero = np.zeros(warped_shape).astype(np.uint8)
     color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
 
-    # Recast the x and y points into usable format for cv2.fillPoly()
     pts_left = np.array([np.transpose(np.vstack([left_fitx, lefty]))])
     pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, righty])))])
     pts = np.hstack((pts_left, pts_right))
     
-    # Draw the lane onto the warped blank image
     cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
     
-    # Warp the blank back to original image space using inverse perspective matrix (Minv)
     newwarp, _, __ = perspective_transform(color_warp, inverse=True)
-#    # Combine the result with the original image
+
     combined = cv2.addWeighted(img, 1, newwarp, 0.3, 0)
     
     return combined
     
-def draw_line_window_to_road(img, line_mask):
-
-    # Create an image to draw the lines on
+def draw_transformed_mask_to_road(img, line_mask):
+    """
+    Draws the line window, where line is seeked in, to the road. The line_mask
+    is stacked to get a blue colour, then transformed to the road perspective
+    and then added to the image.
+    
+    parameters:
+        img ... input image
+        line_mask ... perspective transformed binary mask
+    """
     empty = np.zeros_like(line_mask).astype(np.uint8)
 
     mask_colour = 255 * np.dstack((empty,
                                    empty,
                                    line_mask.astype(np.uint8)))
 
-    # Warp the blank back to original image space using inverse perspective matrix (Minv)
     mask_warped, _, __ = perspective_transform(mask_colour, inverse=True)
 
-    # Combine the result with the original image
     combined = cv2.addWeighted(img, 1, mask_warped, 0.2, 0)
 
     return combined
 
-def lines_from_hist(warped):
+def detect_lines_in_warped(warped):
+    """
+    detects lines from warped image using a sliding histogram
+    
+    parameters:
+        warped ... warped binary
+        
+    returns:
+        leftx ... x values of left line
+        rightx ... x values of right line
+    """
+
     img_size = warped.shape
-    leftx = np.empty((img_size[0],1))
-    rightx = np.empty((img_size[0],1))
+    leftx = np.empty((img_size[0], 1))
+    rightx = np.empty((img_size[0], 1))
 
     printing_size = 2*72
     windowsize = int(img_size[0]/4)
+
     for slide in range(0, img_size[0], printing_size):
+
         hist_idx_start = max(img_size[0]-slide-windowsize, 0)
         hist_idx_end = img_size[0]-slide
+
         save_idx_start = img_size[0]-printing_size-slide
         save_idx_end = img_size[0]-slide
+
         if hist_idx_start >=0:
 
-            histogram = np.sum(warped[hist_idx_start:hist_idx_end,:], axis=0)
+            histogram = np.sum(warped[hist_idx_start:hist_idx_end, :], axis=0)
+
             left_peak, right_peak = get_peaks(histogram)
+
             leftx[save_idx_start:save_idx_end] = left_peak
             rightx[save_idx_start:save_idx_end] = right_peak
 
     return leftx, rightx
 
 
-def mask_image(image):#, mask_leftx, mask_rightx):
-    
-    
-    
-    image_masked = image.copy()
-    mask = np.zeros(image_masked.shape, dtype=bool)
-    pixels_per_side = int(image.shape[1]/8)
-    mask[:, pixels_per_side:-pixels_per_side] = True
-
-    image_masked[~mask] = 0
-    
-    return image_masked
-
 def right_line_mask(shape, line_inst):
+    """
+    creates right line mask with a window width of line_inst.lane_width_window
     
-    if len(line_inst.recent_fit_xval) == 0:
+    parameters:
+        shape ... shape of mask
+        line_inst ... line instance
+    """
+    if line_inst.buffer == 0:
+
         xvals = np.ones(720)*950
         yvals = np.linspace(0, 719, num=720)
 
     else:
+
         yvals = line_inst.ally
         xvals = line_inst.avg_fit_xval
 
     half_mask_width = int(line_inst.lane_width_window/2)
-#    print('Line-mask-width', half_mask_width*2)
+
     right_mask = create_line_mask(shape, xvals, yvals, half_mask_width)
     
     return right_mask
 
+
 def left_line_mask(shape, line_inst):
+    """
+    creates left line mask with a window width of line_inst.lane_width_window
     
-    if len(line_inst.recent_fit_xval) == 0:
+    parameters:
+        shape ... shape of mask
+        line_inst ... line instance
+    """
+    if line_inst.buffer == 0:
+
         xvals = np.ones(720)*300
         yvals = np.linspace(0, 719, num=720)
     
     else:
+
         yvals = line_inst.ally
         xvals = line_inst.avg_fit_xval
 
@@ -368,24 +435,55 @@ def left_line_mask(shape, line_inst):
     
     return left_mask
 
-def create_line_mask(shape, xvals, yvals, shift_pixels):
 
+def create_line_mask(shape, xvals, yvals, mask_width_halfed):
+    """
+    create a line mask
+    
+    parameters:
+        shape ... shape of mask
+        xvals ... fitted x values of last detected line
+        yvals ... fitted y values of last detected line
+        mask_width_halfed ... half width of unmasked area around detected line
+    returns:
+        mask ... mask
+    """
     mask = np.zeros(shape, dtype=bool)
 
     for idx, pixel_y in enumerate(yvals):
-        mask[pixel_y, xvals[idx]-shift_pixels:xvals[idx]+shift_pixels] = True
+        mask[pixel_y, xvals[idx]-mask_width_halfed:xvals[idx]+mask_width_halfed] = True
 
     return mask
 
-def plot_image(image, title, debug_mode=False):
+
+def plot_gray_image(image, title, debug_mode=False):
+    """
+    plots image in gray
     
+    parameters:
+        image ... input image
+        title ... title of plot
+        debug_mode ... [False] only plot if true
+    """
+
     if debug_mode:
         plt.figure()
         plt.imshow(image, cmap='gray')
         plt.title(title)
 
-def plot_detected_lines(image, line_left, line_right, debug_mode=False):
+
+def plot_detected_lines(warped, line_left, line_right, debug_mode=False):
+    """
+    plots detected lines on warped image 
+    and saves image in 'output_images/detected_lanes.jpg'
     
+    parameters:
+        warped ... warped input image
+        line_left ... left line object
+        line_right ... right line object
+        debug_mode ... [False] only plot if true
+    
+    """
     leftx = line_left.allx
     lefty = line_left.ally
 
@@ -394,7 +492,7 @@ def plot_detected_lines(image, line_left, line_right, debug_mode=False):
 
     if debug_mode:
         plt.figure()
-        plt.imshow(image, 'gray')
+        plt.imshow(warped, 'gray')
         plt.plot(leftx, lefty, '.', color='red', linewidth=2)
         plt.plot(rightx, righty, '.', color='blue', linewidth=2)
         plt.xlim(0, 1280)
@@ -404,8 +502,18 @@ def plot_detected_lines(image, line_left, line_right, debug_mode=False):
         figpath = 'output_images/detected_lanes.jpg'
         plt.savefig(figpath)
 
+
 def plot_fitted_curve(line_left, line_right, debug_mode=False):
+    """
+    plots fitted line curves
+    and saves image in 'output_images/plotted_lines.jpg'
     
+    parameters:
+        line_left ... left line object
+        line_right ... right line object
+        debug_mode ... [False] only plot if true
+
+    """
     if debug_mode:
 
         leftx = line_left.allx
@@ -423,13 +531,26 @@ def plot_fitted_curve(line_left, line_right, debug_mode=False):
         plt.ylim(0, 720)
         plt.plot(left_fitx, lefty, color='green', linewidth=2)
         plt.plot(right_fitx, righty, color='green', linewidth=2)
-        plt.gca().invert_yaxis() # to visualize as we do the images
+        plt.gca().invert_yaxis()
 
         figpath = 'output_images/plotted_lines.jpg'
         plt.savefig(figpath)
 
+
 def plot_transformed_perspective_binary(orig, transformed, src=None, dst=None, debug_mode=False):
+    """
+    plots original transformed perspective binary and draws source and 
+    destination points as a polygon.
+    The image is then saved as 'output_images/transformed_perspective.jpg'
     
+    parameters:
+        orig ... original image
+        transformed ... transformed perspective binary image
+        src ... [None] source points used for perspective transformation
+        dst ... [None] destination points used for perspective transformation
+        debug_mode ... [False] only plot if true
+
+    """
     if debug_mode:
         red_color_int = (255,0,0)
         red_color_float = (1,0,0)
@@ -467,7 +588,20 @@ def plot_transformed_perspective_binary(orig, transformed, src=None, dst=None, d
 
         plt.savefig(figpath)
 
+
 def detect(img):
+    """
+    Detects right line and left line in a given image.
+    The information are then processed in the line objects.
+    The detected lines and some other information are finally drawn to the 
+    picture.
+    
+    parameters:
+        img ... input image
+        
+    returns:
+        img_lanearea ... image with detected lane area
+    """
 
     global left_line
     global right_line
@@ -485,18 +619,17 @@ def detect(img):
     ### 3. Color/gradient threshold
 
     img_binary = thresholds.combined_binary(img_undist)
-    plot_image(img_binary, 'binary ... combined thresholds', DEBUG_MODE)
+    plot_gray_image(img_binary, 'binary ... combined thresholds', DEBUG_MODE)
 
     ### 4. Perspective transform
     
     img_warped, src, dst = perspective_transform(img_binary)
 
-    left_lane_mask = left_line_mask(img_warped.shape, left_line)#, mask_leftx, mask_lefty)
-
+    left_lane_mask = left_line_mask(img_warped.shape, left_line)
     right_lane_mask = right_line_mask(img_warped.shape, right_line)
 
-    plot_image(left_lane_mask, 'Mask left', True)
-    plot_image(right_lane_mask, 'Mask right', True)
+    plot_gray_image(left_lane_mask, 'Mask left', True)
+    plot_gray_image(right_lane_mask, 'Mask right', True)
 
     img_warped[(left_lane_mask == 0) & (right_lane_mask == 0)] = 0
 
@@ -510,7 +643,8 @@ def detect(img):
     
     ### 5. Detect lane lines
     
-    leftx_detected, rightx_detected = lines_from_hist(img_warped)
+    leftx_detected, rightx_detected = detect_lines_in_warped(img_warped)
+
     lefty_detected = np.linspace(0, 719, num=720)
     righty_detected = np.linspace(0, 719, num=720)
 
@@ -531,44 +665,43 @@ def detect(img):
 
     ### 6. Determine the lane curvature
     
-    left_curverad = left_line.radius_of_curvature
-    right_curverad = right_line.radius_of_curvature
-    
     offset = round(np.mean([left_line.line_base_pos, right_line.line_base_pos]), 2)
 
-    img_lanearea = draw_lane_area_to_road(img, img_warped, left_line, right_line)
+    img_lanearea = draw_lane_area_to_road(img, img_warped.shape, left_line, right_line)
 
-    img_lanearea = draw_line_window_to_road(img_lanearea, left_lane_mask)
-    img_lanearea = draw_line_window_to_road(img_lanearea, right_lane_mask)
+    img_lanearea = draw_transformed_mask_to_road(img_lanearea, left_lane_mask)
+    img_lanearea = draw_transformed_mask_to_road(img_lanearea, right_lane_mask)
 
     
     font = cv2.FONT_HERSHEY_SIMPLEX
     
-    str1 = str('Offset: '+str(offset)+'m')
-    cv2.putText(img_lanearea, str1, (430,70), font, 1, (255,0,0), 2, cv2.LINE_AA)
+    str_offset = str('Offset: '+str(offset)+'m')
+    cv2.putText(img_lanearea, str_offset, (430,70), font, 1, (255,0,0), 2, cv2.LINE_AA)
     
     if left_line.radius_of_curvature and right_line.radius_of_curvature:
+
         curvature = round(np.mean([left_line.radius_of_curvature, right_line.radius_of_curvature]), 1)
-        str2 = str('radius of curvature: '+str(curvature)+'m')
-        cv2.putText(img_lanearea, str2, (430,110), font, 1, (255,0,0), 2, cv2.LINE_AA)    
+        
+        str_curvature = str('radius of curvature: '+str(curvature)+'m')
+        
+        cv2.putText(img_lanearea, str_curvature, (430,110), font, 1, (255,0,0), 2, cv2.LINE_AA)    
     
-    cv2.putText(img_lanearea, 'left position: ' + str(float(left_line.line_base_pos.round(1))), (70,170), font, 1, (255,0,0), 2, cv2.LINE_AA)
-    cv2.putText(img_lanearea, 'right position: ' + str(float(right_line.line_base_pos.round(1))), (730,170), font, 1, (255,0,0), 2, cv2.LINE_AA)
- 
-    cv2.putText(img_lanearea, 'left window: ' + str(float(left_line.lane_width_window.round(1))), (70,210), font, 1, (255,0,0), 2, cv2.LINE_AA)
-    cv2.putText(img_lanearea, 'right window: ' + str(float(right_line.lane_width_window.round(1))), (730,210), font, 1, (255,0,0), 2, cv2.LINE_AA)
+#    cv2.putText(img_lanearea, 'left position: ' + str(float(left_line.line_base_pos.round(1))), (70,170), font, 1, (255,0,0), 2, cv2.LINE_AA)
+#    cv2.putText(img_lanearea, 'right position: ' + str(float(right_line.line_base_pos.round(1))), (730,170), font, 1, (255,0,0), 2, cv2.LINE_AA)
+# 
+#    cv2.putText(img_lanearea, 'left window: ' + str(float(left_line.lane_width_window.round(1))), (70,210), font, 1, (255,0,0), 2, cv2.LINE_AA)
+#    cv2.putText(img_lanearea, 'right window: ' + str(float(right_line.lane_width_window.round(1))), (730,210), font, 1, (255,0,0), 2, cv2.LINE_AA)
     
     coeff = left_line.current_fit_coeff
-    msg = '{}, {}, {}'.format(coeff[0].round(2), coeff[1].round(1), coeff[2].round(0))
-    cv2.putText(img_lanearea, 'fit coeff: ' + msg, (130,250), font, 1, (255,0,0), 2, cv2.LINE_AA)
+    str_coeff1 = '{}, {}, {}'.format(coeff[0].round(2), coeff[1].round(1), coeff[2].round(0))
+    cv2.putText(img_lanearea, 'fit coeff: ' + str_coeff1, (130,250), font, 1, (255,0,0), 2, cv2.LINE_AA)
 
     coeff = right_line.current_fit_coeff
-    msg = '{}, {}, {}'.format(coeff[0].round(2), coeff[1].round(1), coeff[2].round(0))
-    cv2.putText(img_lanearea, 'fit coeff: ' + msg, (730,250), font, 1, (255,0,0), 2, cv2.LINE_AA)
+    str_coeff2 = '{}, {}, {}'.format(coeff[0].round(2), coeff[1].round(1), coeff[2].round(0))
+    cv2.putText(img_lanearea, 'fit coeff: ' + str_coeff2, (730,250), font, 1, (255,0,0), 2, cv2.LINE_AA)
 
-    string = 'Buffer ' + ''.join(['I']*len(left_line.recent_fit_xval))
+    string = 'Buffer ' + ''.join(['I']*left_line.buffer)
     cv2.putText(img_lanearea, string, (30,60), font, 1, (0,0,0), 2, cv2.LINE_AA)
-
 
     return img_lanearea
 
@@ -586,16 +719,16 @@ if __name__ == "__main__":
     left_line = Line(8)
     right_line = Line(8)
 
-    fname = 'test_images/straight_lines1.jpg'
-    img = mpimg.imread(fname)
-    plot_image(img, 'Original Image', True)
+#    fname = 'test_images/straight_lines1.jpg'
+#    img = mpimg.imread(fname)
+#    plot_gray_image(img, 'Original Image', True)
+#
+#    img_lanedetected = detect(img)
+#    
+#    plot_gray_image(img_lanedetected, 'Detected Lane', True)
 
-    img_lanedetected = detect(img)
-    
-    plot_image(img_lanedetected, 'Detected Lane', True)
 
-
-#    white_output = 'project_video_processed.mp4'
-#    clip1 = VideoFileClip("project_video.mp4")
-#    white_clip = clip1.fl_image(process_image) #NOTE: this function expects color images!!
-#    white_clip.write_videofile(white_output, audio=False)
+    white_output = 'challenge_video_processed.mp4'
+    clip1 = VideoFileClip("challenge_video.mp4")
+    white_clip = clip1.fl_image(process_image)
+    white_clip.write_videofile(white_output, audio=False)
