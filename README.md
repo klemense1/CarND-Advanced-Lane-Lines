@@ -229,4 +229,5 @@ I am displaying the buffer of my line classes to see previous image's informatio
 
 Another great project. Getting from a working image pipeline to a video pipeline by using the line class allowed for much better results.
 I think my binary masks and the histogram detection could both be improved. Without using information from previous images, the identifaction used to fail when experiencing lightness or darkness.
+The dashed line tends to cause more problems and is the reason why the histogram window does need to be big enough.
 The peak detection using histograms might be computationally inefficient. Udacity published code with a sligthly different approach than mine, but as mine was working, I did not really take a look on that. To get faster and more accurate, I will need to improvie this part of the code.
