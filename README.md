@@ -22,11 +22,11 @@ The goals / steps of this project are the following:
 [image_calibration1]: ./camera_cal/corners/corners_found_ny6_nx9_calibration2.png "Corners with ny=6 and nx=9"
 [image_calibration3]: ./camera_cal/undistored/undistort_output_calibration1.png "Undistorted image 1"
 
-[image_undistored]: ./output_images/undistored.png "Undistorted lane image"
-[image_binary]: ./output_images/binarycombinedthresholds.png "Binary lane image"
-[image_warped]: ./binarycombinedthresholds/transformed_perspective.png "Warped image"
-[image_detected_lines]: ./binarycombinedthresholds/detected_lanes.png "Detected Lines"
-[image_plotted_lines]: ./binarycombinedthresholds/plotted_lines.png "Fitted curve through detected Lines"
+[image_undistored]: output_images/undistored.png "Undistorted lane image"
+[image_binary]: output_images/binarycombinedthresholds.png "Binary lane image"
+[image_warped]: binarycombinedthresholds/transformed_perspective.png "Warped image"
+[image_detected_lines]: binarycombinedthresholds/detected_lanes.png "Detected Lines"
+[image_plotted_lines]: binarycombinedthresholds/plotted_lines.png "Fitted curve through detected Lines"
 
 [image_final]: ./examples/detected_lane.png "Output image"
 
