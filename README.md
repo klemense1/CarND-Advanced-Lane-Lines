@@ -29,6 +29,9 @@ The goals / steps of this project are the following:
 [image_detected_lines]: output_images/detected_lanes.png "Detected Lines"
 [image_plotted_lines]: output_images/plotted_lines.png "Fitted curve through detected Lines"
 
+
+[image_binary_comparison]: output_images/binary_comparison.png "Comparison of different masks"
+
 [image_final]: output_images/detected_lane.png "Output image"
 
 [video1]: ./project_video_processed.mp4 "Video Output"
@@ -54,25 +57,32 @@ I read in the image, convert it to gray-scale, and use the opencv function findC
   ret, corners = cv2.findChessboardCorners(gray, (nx, ny), None)
 If the corners could be identified, I keep the found corners and their matching object points.
 
-  if ret==True:
-    imgpoints.append(corners)
-    objpoints.append(objp)
+    if ret==True:
+      imgpoints.append(corners)
+      objpoints.append(objp)
 
 I then used the output `objpoints` and `imgpoints` to compute the camera calibration and distortion coefficients using the `cv2.calibrateCamera()` function.
   ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, img_size,None,None)
 
 I first started out with nx = 9 and ny = 6, which lead to missing out the following files:
-  No corners found in camera_cal/calibration1.jpg
-  No corners found in camera_cal/calibration4.jpg
-  No corners found in camera_cal/calibration5.jpg
+
+    No corners found in camera_cal/calibration1.jpg
+    No corners found in camera_cal/calibration4.jpg
+    No corners found in camera_cal/calibration5.jpg
 
 After having a closer look on them, I realized that those images only had a fraction of the chessboard, which meant they did not have the fill number of corners in each direction. Step by step, I added less possible number of corners in each direction, finally coming up with:
-  for nx in [6, 7, 8, 9]:
+
+    for nx in [6, 7, 8, 9]:
       for ny in [5, 6]:
         ...
+
 Identifying not all corners does not hurt, as can be seen in the following pictures:
 
+Corners with ny=6 and nx=8
+
 ![alt text][image_calibration1]
+
+Corners with ny=6 and nx=9
 
 ![alt text][image_calibration2]
 
@@ -82,18 +92,40 @@ I applied this distortion correction to the test image using the `cv2.undistort(
 
 Finally, I saved the calibration data as a pickle, so that the calibration does not need to be repeated again.
 
-###Pipeline (single images)
+### Pipeline (single images)
 
-####1. Provide an example of a distortion-corrected image.
-To demonstrate this step, I will describe how I apply the distortion correction to one of the test images like this one:
+The image is getting processed in the detect-function in `laneline.py`. I am going through the processing steps by using the following image as an example.
+
 ![alt text][image_original]
-####2. Describe how (and identify where in your code) you used color transforms, gradients or other methods to create a thresholded binary image.  Provide an example of a binary image result.
+#### 1. Distortion correction
+First, I am loading loading the camera matrix and the vector of distortion coefficients from the pickle. I then use `cv2.undistort()`, which is implemented in the function `undistort()`.
+
+The output of this step can be seen in the following:
 
 ![alt text][image_undistored]
 
-I used a combination of color and gradient thresholds to generate a binary image (thresholding steps in `thresholds.py`).  Here's an example of my output for this step.
+#### Binary thresholding
+
+I used a combination of color and gradient thresholds to generate a binary image (thresholding is performed in the function `combined_binary()` in `thresholds.py`).  Here's an example of my output for this step.
 
 ![alt text][image_binary]
+
+How did I get there? I applied the following thresholds:
+- gradient gradient in x and y direction
+- magnitude gradient from x and y
+- directional gradient
+- saturation channel
+- red channel
+- lightness
+- canny edge detection
+
+First, I changed the threshold boundaries to get a good output from each operation. Then I tried out various combinations and came up with the following:
+
+    combined[((sx_binarx == 1) | ((mag_binary == 1) & (dir_binary == 1))) |
+             ((sat_binary == 1)  & (lightness_binary==1)) |
+             (red_binary == 1)] = 1
+The outputs of the various thresholds are displayed here:
+![alt text][image_binary_comparison]
 
 ####3. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
 
