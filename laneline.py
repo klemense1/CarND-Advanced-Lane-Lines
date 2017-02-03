@@ -17,7 +17,6 @@ import thresholds
 
 plt.close("all")
 
-DEBUG_MODE = False
 
 class Line():
     def __init__(self, queuelength):
@@ -470,12 +469,14 @@ def plot_gray_image(image, title, debug_mode=False):
         plt.figure()
         plt.imshow(image, cmap='gray')
         plt.title(title)
+        
+        plt.savefig('output_images/' + title.replace(' ','').replace('.', ''), dpi=150)
 
 
 def plot_detected_lines(warped, line_left, line_right, debug_mode=False):
     """
     plots detected lines on warped image 
-    and saves image in 'output_images/detected_lanes.jpg'
+    and saves image in 'output_images/detected_lanes'
     
     parameters:
         warped ... warped input image
@@ -499,14 +500,14 @@ def plot_detected_lines(warped, line_left, line_right, debug_mode=False):
         plt.ylim(0, 720)
         plt.gca().invert_yaxis()
         
-        figpath = 'output_images/detected_lanes.jpg'
-        plt.savefig(figpath)
+        figpath = 'output_images/detected_lanes'
+        plt.savefig(figpath, dpi=150)
 
 
 def plot_fitted_curve(line_left, line_right, debug_mode=False):
     """
     plots fitted line curves
-    and saves image in 'output_images/plotted_lines.jpg'
+    and saves image in 'output_images/plotted_lines'
     
     parameters:
         line_left ... left line object
@@ -533,15 +534,15 @@ def plot_fitted_curve(line_left, line_right, debug_mode=False):
         plt.plot(right_fitx, righty, color='green', linewidth=2)
         plt.gca().invert_yaxis()
 
-        figpath = 'output_images/plotted_lines.jpg'
-        plt.savefig(figpath)
+        figpath = 'output_images/plotted_lines'
+        plt.savefig(figpath, dpi=150)
 
 
 def plot_transformed_perspective_binary(orig, transformed, src=None, dst=None, debug_mode=False):
     """
     plots original transformed perspective binary and draws source and 
     destination points as a polygon.
-    The image is then saved as 'output_images/transformed_perspective.jpg'
+    The image is then saved as 'output_images/transformed_perspective'
     
     parameters:
         orig ... original image
@@ -584,9 +585,9 @@ def plot_transformed_perspective_binary(orig, transformed, src=None, dst=None, d
         ax2.set_title(transformed['Title'])
         plt.tight_layout()
         
-        figpath = 'output_images/transformed_perspective.jpg'
+        figpath = 'output_images/transformed_perspective'
 
-        plt.savefig(figpath)
+        plt.savefig(figpath, dpi=150)
 
 
 def detect(img):
@@ -615,6 +616,7 @@ def detect(img):
     ### 2. Distortion correction
 
     img_undist = undistort(img, mtx, dist)
+    plot_gray_image(img_undist, 'undistored', DEBUG_MODE)
 
     ### 3. Color/gradient threshold
 
@@ -628,8 +630,12 @@ def detect(img):
     left_lane_mask = left_line_mask(img_warped.shape, left_line)
     right_lane_mask = right_line_mask(img_warped.shape, right_line)
 
-    plot_gray_image(left_lane_mask, 'Mask left', True)
-    plot_gray_image(right_lane_mask, 'Mask right', True)
+    f, (ax1, ax2) = plt.subplots(1, 2)
+    ax1.imshow(left_lane_mask, 'gray')
+    ax1.set_title('Mask left')
+    ax2.imshow(right_lane_mask, 'gray')
+    ax2.set_title('Mask right')
+    plt.savefig('output_images/masks', dpi=150)
 
     img_warped[(left_lane_mask == 0) & (right_lane_mask == 0)] = 0
 
@@ -716,19 +722,27 @@ def process_image(img):
 
 if __name__ == "__main__":
 
-    left_line = Line(8)
-    right_line = Line(8)
+    PIPELINE_VIDEO = False
+    DEBUG_MODE = not(PIPELINE_VIDEO)
 
-#    fname = 'test_images/straight_lines1.jpg'
-#    img = mpimg.imread(fname)
-#    plot_gray_image(img, 'Original Image', True)
-#
-#    img_lanedetected = detect(img)
-#    
-#    plot_gray_image(img_lanedetected, 'Detected Lane', True)
+    if PIPELINE_VIDEO:
+    
+        white_output = 'project_video_processed.mp4'
+        clip1 = VideoFileClip("project_video.mp4")
+        white_clip = clip1.fl_image(process_image)
+        white_clip.write_videofile(white_output, audio=False)
 
-
-    white_output = 'challenge_video_processed.mp4'
-    clip1 = VideoFileClip("challenge_video.mp4")
-    white_clip = clip1.fl_image(process_image)
-    white_clip.write_videofile(white_output, audio=False)
+    else:
+        
+        left_line = Line(8)
+        right_line = Line(8)
+    
+        fname = 'test_images/test1.jpg'
+        img = mpimg.imread(fname)
+        plot_gray_image(img, 'Original Image', True)
+    
+        img_lanedetected = detect(img)
+        
+        plt.figure()
+        plt.imshow(img_lanedetected)
+        plt.savefig('output_images/detected_lane', dpi=150)

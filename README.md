@@ -27,6 +27,7 @@ The goals / steps of this project are the following:
 [image_binary]: output_images/binarycombinedthresholds.png "Binary lane image"
 [image_warped]: output_images/transformed_perspective.png "Warped image"
 [image_detected_lines]: output_images/detected_lanes.png "Detected Lines"
+[image_masks]: output_images/masks.png "Binary masks for left and right lane"
 [image_plotted_lines]: output_images/plotted_lines.png "Fitted curve through detected Lines"
 
 
@@ -40,14 +41,7 @@ The goals / steps of this project are the following:
 ###Here I will consider the rubric points individually and describe how I addressed each point in my implementation.
 
 ---
-###Writeup / README
-
-####1. Provide a Writeup / README that includes all the rubric points and how you addressed each one.  You can submit your writeup as markdown or pdf.  [Here](https://github.com/udacity/CarND-Advanced-Lane-Lines/blob/master/writeup_template.md) is a template writeup for this project you can use as a guide and a starting point.
-
-You're reading it!
-###Camera Calibration
-
-####1. Briefly state how you computed the camera matrix and distortion coefficients. Provide an example of a distortion corrected calibration image.
+### Camera Calibration
 
 The code for this step is contained in  `calibratecamera.py`.
 
@@ -92,7 +86,7 @@ I applied this distortion correction to the test image using the `cv2.undistort(
 
 Finally, I saved the calibration data as a pickle, so that the calibration does not need to be repeated again.
 
-### Pipeline (single images)
+### Pipeline for single images
 
 The image is getting processed in the detect-function in `laneline.py`. I am going through the processing steps by using the following image as an example.
 
@@ -104,7 +98,7 @@ The output of this step can be seen in the following:
 
 ![alt text][image_undistored]
 
-#### Binary thresholding
+#### 2. Binary thresholding
 
 I used a combination of color and gradient thresholds to generate a binary image (thresholding is performed in the function `combined_binary()` in `thresholds.py`).  Here's an example of my output for this step.
 
@@ -127,16 +121,16 @@ First, I changed the threshold boundaries to get a good output from each operati
 The outputs of the various thresholds are displayed here:
 ![alt text][image_binary_comparison]
 
-####3. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
+#### 3. Perspective transformation
 
-The code for my perspective transform includes a function called `warper()`, which appears in lines 1 through 8 in the file `example.py` (output_images/examples/example.py) (or, for example, in the 3rd code cell of the IPython notebook).  The `warper()` function takes as inputs an image (`img`), as well as source (`src`) and destination (`dst`) points.  I chose the hardcode the source and destination points in the following manner:
+To get from a camera view to a birds view, one needs to perform a perspective transformation on the image. The function `perspective_transformation()` function takes as inputs an image (`img`) and a boolean value allowing for both the normal and the inverse transformation. The source (`src`) and destination (`dst`) points are hardcoded in the function itself in the following manner:
 
 ```
 src = np.float32(
-    [[(img_size[0] / 2) - 55, img_size[1] / 2 + 100],
+    [[(img_size[0] / 2) - 60, img_size[1] / 2 + 100],
     [((img_size[0] / 6) - 10), img_size[1]],
     [(img_size[0] * 5 / 6) + 60, img_size[1]],
-    [(img_size[0] / 2 + 55), img_size[1] / 2 + 100]])
+    [(img_size[0] / 2 + 60), img_size[1] / 2 + 100]])
 dst = np.float32(
     [[(img_size[0] / 4), 0],
     [(img_size[0] / 4), img_size[1]],
@@ -148,45 +142,91 @@ This resulted in the following source and destination points:
 
 | Source        | Destination   |
 |:-------------:|:-------------:|
-| 585, 460      | 320, 0        |
-| 203, 720      | 320, 720      |
-| 1127, 720     | 960, 720      |
-| 695, 460      | 960, 0        |
+| 580, 460      | 320, 0        |
+| 213, 720      | 320, 720      |
+| 1116, 720     | 960, 720      |
+| 700, 460      | 960, 0        |
+
+As stated above, I am allowing for normal and inverse transformation. The transformation matrix is calculated from:
+
+    if inverse==False:
+      M = cv2.getPerspectiveTransform(source_pts, dest_pts)
+      ...
+    else:
+      Minv = cv2.getPerspectiveTransform(dest_pts, source_pts)
+      ...
 
 I verified that my perspective transform was working as expected by drawing the `src` and `dst` points onto a test image and its warped counterpart to verify that the lines appear parallel in the warped image.
 
 ![alt text][image_warped]
 
-####4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
+#### 4. Identification of lane-line pixels
+4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
+
+I am applying masks for the right and left line to the warped binary image, so the algorithm will not need to search the line in an area where I don't expect it to be. How do I know where to look?
+
+I am applying a window size to where I detected the line before and leave out everything else. As I don't know anything about the line when having only one picture, I starting with a big window size and reduce it when having a video stream and a pretty good idea, where the line should be.
+
+So for a single picture (or for a video stream), the initial masks look like the following:
+![alt text][image_masks]
+
+The function `detect_lines_in_warped()` takes a warped binary as an input and uses a sliding histogram to identify the peaks. I am using a window-size in y-direction of 180 pixels (one fourth of the x-length). The histogram is applied to that part of the image. The window is moved with a step-size of 144 (one fifth of the x-length). With those settings, I got a robust line detection. It is displayed in the following:
 
 ![alt text][image_detected_lines]
 
-Then I did some other stuff and fit my lane lines with a 2nd order polynomial kinda like this:
+I then fitted a 2nd order polynomial through the detected pixels. The result (green curves) can be seen in the following picture:
 
 ![alt text][image_plotted_lines]
 
-####5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
+#### 5. Radius of lane curvature and position of the vehicle
 
-I did this in lines # through # in my code in `my_other_file.py`
+In the method `set_radius_of_curvature()` of the line class, I am calculating the radius of the line curvature. I am then taking the mean from the curvature of left and right line.
 
-####6. Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.
+In the method `set_line_base_pos()` of the line class, I am calculating the position, where the line hits the bottom of the window. I am then taking the mean from the base postions of left and right line to calculate the offset.
 
-I implemented this step in lines # through # in my code in `yet_another_file.py` in the function `map_lane()`.  Here is an example of my result on a test image:
+#### 6. Lane identification
+
+I finally draw the lines interpolated from the fitted polynomial back to the stree. That is done in `draw_lane_area_to_road()`, which takes the original image, the shape of the warped image, and the objects of left and right line as an input.
+
+First, to draw a coloured polygon, I define an array with image shape and three channels.
+
+    warp_zero = np.zeros(warped_shape).astype(np.uint8)
+    color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
+
+I then transform the x and y pairs of fitted lines to fit to the `cv2.fillPoly()` function.
+
+    pts_left = np.array([np.transpose(np.vstack([left_fitx, lefty]))])
+    pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, righty])))])
+    pts = np.hstack((pts_left, pts_right))
+
+    cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
+
+I now got a drawn polygon with the identified lane in `color_warp`, but it is still in birds view. I then transform the colored warp back to the steet and combine it with the input image.
+
+    newwarp, _, __ = perspective_transform(color_warp, inverse=True)
+
+    combined = cv2.addWeighted(img, 1, newwarp, 0.3, 0)
+
+In addition to that, I am also drawing the line window of the mask in blue, which I described before. This is done in `draw_transformed_mask_to_road()`, which works similar to the function stated above.
+
+I am also displaying the fitting coefficients of each line, the offset and the radius of curvature.
 
 ![alt text][image_final]
 
 ---
 
-###Pipeline (video)
+### Pipeline for a video stream
 
-####1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (wobbly lines are ok but no catastrophic failures that would cause the car to drive off the road!).
+The video result can be seen here:
 
-Here's a [link to my video result][video1]
+[link to my video result][video1]
+
+I am displaying the buffer of my line classes to see previous image's informations are still in the pipeline. This allows for quick debugging, as a dropping buffer in the mid of the video would indiciate that the line identification was repeatingly unsuccessful.
 
 ---
 
-###Discussion
+### Discussion
 
-####1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
-
-Here I'll talk about the approach I took, what techniques I used, what worked and why, where the pipeline might fail and how I might improve it if I were going to pursue this project further.
+Another great project. Getting from a working image pipeline to a video pipeline by using the line class allowed for much better results.
+I think my binary masks and the histogram detection could both be improved. Without using information from previous images, the identifaction used to fail when experiencing lightness or darkness.
+The peak detection using histograms might be computationally inefficient. Udacity published code with a sligthly different approach than mine, but as mine was working, I did not really take a look on that. To get faster and more accurate, I will need to improvie this part of the code.

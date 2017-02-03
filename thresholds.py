@@ -53,6 +53,16 @@ def saturation_threshold(img, thresh = (90, 255)):
            
     return sat_binary
 
+def lightness_threshold(img, thresh = (40, 255)):
+    
+    hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
+    L = hls[:,:,1]
+
+    lht_binary = np.zeros_like(L)
+    lht_binary[(L > thresh[0]) & (L <= thresh[1])] = 1
+           
+    return lht_binary
+
 def red_threshold(img, thresh = (200, 255)):
     
 #    hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
@@ -136,20 +146,21 @@ def combined_binary(img, plotting=False):
 
     dir_binary = direction_threshold(img, sobel_kernel=15, thresh=(0.7, 1.3))
 
-    sat_binary = saturation_threshold(img, thresh = (180, 240))
+    sat_binary = saturation_threshold(img, thresh = (120, 255))
 
     can_binary = canny_edge_threshold(img, thresh = (50, 100), smoothing_kernel = 5)
 
     red_binary = red_threshold(img, thresh = (230, 255))
 
+    lightness_binary = lightness_threshold(img, thresh = (30, 255))
     combined = np.zeros_like(dir_binary)
 
-    combined[((sx_binarx == 1) | ((mag_binary == 1) & (dir_binary == 1))) | (sat_binary == 1) | (red_binary == 1)] = 1
-#    combined[((sx_binarx == 1) | ((mag_binary == 1) & (dir_binary == 1))) | ((sat_binary == 1) & (red_binary == 1))] = 1
+#    combined[((sx_binarx == 1) | ((mag_binary == 1) & (dir_binary == 1))) | ((sat_binary == 1)) | (red_binary == 1)] = 1
+    combined[((sx_binarx == 1) | ((mag_binary == 1) & (dir_binary == 1))) | ((sat_binary == 1)  & (lightness_binary==1)) | (red_binary == 1)] = 1
 
     if plotting:
         # Plot the result
-        f, axes = plt.subplots(4, 3, figsize=(16, 8))
+        f, axes = plt.subplots(4, 3, figsize=(12, 12))
         f.tight_layout()
         
         axes[0,0].imshow(sx_binarx, cmap='gray')
@@ -183,21 +194,22 @@ def combined_binary(img, plotting=False):
         axes[2,2].imshow(can_binary, cmap='gray')
         axes[2,2].set_title('Canny Edge')
 
-        axes[3,0].imshow(img)
-        axes[3,0].set_title('Original Image')
+        axes[3,0].imshow(lightness_binary, cmap='gray')
+        axes[3,0].set_title('Lightness Image')
 
         axes[3,1].imshow(img)
         axes[3,1].set_title('Original Image')
     
         axes[3,2].imshow(combined, cmap='gray')
         axes[3,2].set_title('Combined Binary Gradient')
-    
+        
+#        plt.subplots_adjust(bottom=0.1, right=1.8, top=0.9)
         plt.tight_layout()
-    
+        plt.savefig('output_images/binary_comparison', dpi=150)#    plt.savefig('output_images/binary_combo_example.jpg')
     return combined
 
 if __name__ == '__main__':
-    image = mpimg.imread('test_images/test5.jpg')
+    image = mpimg.imread('test_images/test1.jpg')
     
     omb = combined_binary(image, True)
     
