@@ -71,7 +71,7 @@ After having a closer look on them, I realized that those images only had a frac
         ...
 Identifying not all corners does not hurt, as can be seen in the following pictures:
 
-![alt text][image_calibration1]
+![Undistored Image 1](camera_cal/undistored/undistort_output_calibration1.jpg)
 
 ![alt text][image_calibration2]
 
